@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 NonEmptyText = Annotated[str, StringConstraints(min_length=1, pattern=r"\S")]
 PositiveLine = Annotated[int, Field(strict=True, gt=0)]
@@ -20,6 +20,27 @@ class AgentType(str, Enum):
     code_quality = "code_quality"
     security = "security"
     test_coverage = "test_coverage"
+
+
+class ErrorCategory(str, Enum):
+    invalid_json = "invalid_json"
+    invalid_schema = "invalid_schema"
+    invalid_source_evidence = "invalid_source_evidence"
+    recommendation_limit_exceeded = "recommendation_limit_exceeded"
+    output_truncated = "output_truncated"
+    api_timeout = "api_timeout"
+    provider_error = "provider_error"
+    unknown_error = "unknown_error"
+
+
+def normalize_error_category(value: object) -> ErrorCategory:
+    """Allowlist only, without interpreting arbitrary exception text."""
+    if isinstance(value, str):
+        try:
+            return ErrorCategory(value)
+        except ValueError:
+            pass
+    return ErrorCategory.unknown_error
 
 
 class ReviewFinding(BaseModel):
@@ -60,6 +81,12 @@ class AgentReviewResult(BaseModel):
     status: Literal["success", "failed", "skipped"]
     findings: list[ReviewFinding] = Field(default_factory=list)
     error_message: NonEmptyText | None = None
+    error_category: ErrorCategory | None = None
+
+    @field_validator("error_category", mode="before")
+    @classmethod
+    def allowlisted_category(cls, value: object) -> ErrorCategory | None:
+        return None if value is None else normalize_error_category(value)
 
     @model_validator(mode="after")
     def validate_result(self) -> Self:
@@ -69,6 +96,10 @@ class AgentReviewResult(BaseModel):
             raise ValueError("Failed or skipped results must not contain findings")
         if self.status == "success" and self.error_message is not None:
             raise ValueError("Successful results must not contain an error_message")
+        if self.status == "success" and self.error_category is not None:
+            raise ValueError("Successful results must not contain an error_category")
+        if self.status != "success" and self.error_category is None:
+            self.error_category = ErrorCategory.unknown_error
         return self
 
 

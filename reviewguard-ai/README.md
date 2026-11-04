@@ -118,9 +118,9 @@ Source is sent as untrusted data in a separate user message. It is never execute
 or saved by the agent. Prompt instructions and grounding checks reduce risk but
 cannot guarantee prompt-injection resistance or the technical correctness or
 completeness of a review. Source size/context-limit handling remains the caller's
-responsibility. To suppress SDK debug output, reviews through this agent are
-serialized while logging is temporarily disabled and restored afterward; other
-threads' logs may also be suppressed during that interval. Automated agent tests
+responsibility. SDK log records are filtered only in this agent's execution
+context; application logs and other review threads are unaffected. Logger levels,
+handlers and global disable state are unchanged. Automated agent tests
 use mocked responses; live agent review quality has not been verified.
 
 ## Phase 2, Step 5: security reviewer
@@ -245,3 +245,204 @@ The Step 6D live response exceeded a limit, but its exact counts were not retain
 It is not established which count failed. The new contract and diagnostics have
 offline regression coverage only; no live request was made in Step 6E. The
 4,096-token output budget and zero automatic retries remain unchanged.
+
+## Phase 3, Step 2: LangGraph foundation
+
+`reviewguard.orchestration.graph.build_review_graph()` compiles a `StateGraph`
+without loading credentials, creating clients, or making API calls. The graph
+fans out from START to `code_quality_node`, `security_node`, and
+`test_coverage_node`. A join edge waits for all three before running aggregation
+once, then END. Aggregation currently sets workflow status only; the consolidated
+report stays `None`. No deduplication or report formatting is implemented.
+
+Create fresh state with `reviewguard.orchestration.state.create_initial_state`.
+It includes filename, validated source_code, optional existing_tests and
+measured_coverage, agent_results keyed by AgentType, consolidated_report, and
+workflow_status. Use `await graph.ainvoke(state)` (or `asyncio.run` at a synchronous
+entry point); nodes offload synchronous reviewers with `asyncio.to_thread`.
+Invoke with default reviewers only when paid requests are intended: nonempty
+source can cause up to three inference requests. No automatic retries are added.
+
+For offline execution, inject synchronous `code_quality`, `security`, and
+`test_coverage` callables into `build_review_graph`. The coverage callable accepts
+existing_tests and measured_coverage keyword arguments. Branches emit only their
+own result updates. The pure reducer copies results, merges independent keys,
+and rejects all duplicate agent keys, even equal results, instead of overwriting them. Coverage inputs
+are copied before being handed to its callable. Injected callables must be
+thread-safe if a graph is invoked concurrently; default reviewer instances are
+created per branch invocation. Unexpected branch failures become sanitized failed
+results, allowing other results to reach aggregation. Use fresh initial state for
+each run; completed result state is not a reset mechanism.
+
+Shared schemas and the UI are unchanged. Agent 1 uses context-local SDK logging
+filters rather than process-wide suppression, as described below.
+Graph tests use injected offline callables, including a thread barrier to verify
+overlapping execution and the aggregation join. Live concurrent Fireworks review
+has not been verified. No persistence or tracing is configured by this foundation;
+keep external LangSmith tracing disabled when handling private source.
+
+### Step 3: concurrent real-agent wiring and logging isolation
+
+The default graph creates a fresh reviewer and its own client inside each worker
+thread for each request. No mutable SDK client or reviewer metadata is shared
+between branches or concurrent workflows. Each client is closed by its owner.
+Output budgets stay 2,048/2,048/4,096 tokens for quality/security/coverage,
+respectively; 30-second timeouts and zero automatic retries are preserved.
+The join barrier runs aggregation once after all three branches finish, with
+independent results retained. It still sets execution status only, without
+deduplication or report formatting.
+
+Agent 1's context-local filter suppresses SDK/transport records in its calling
+context and restores that context on exit, including exception and nested paths.
+Filters are attached only to existing SDK/transport loggers and known OpenAI
+client loggers; they pass records from other contexts. No application-wide logger
+levels, handlers or disable flags are changed, and the old request-wide lock is
+removed. Arbitrary custom loggers and transport child loggers first created after
+filter registration are outside this filter's scope. Keep SDK DEBUG logging
+disabled in production, as required by Agents 2 and 3; external logging/tracing
+configuration remains the caller's responsibility.
+
+Tests run all three existing reviewer implementations through default LangGraph
+nodes with mocked client factories and blocked HTTP transport. Six calls across
+two simultaneous workflows reach a barrier before any completes, then tests
+force every possible branch-completion order. Assertions cover isolated clients,
+inputs, results, logging, limits, cleanup, and exactly one aggregation per workflow.
+This verifies concurrent execution offline; no live parallel Fireworks request
+has been made. The previous equal-duplicate reducer assertion now requires a
+failure, strengthening the new duplicate-result contract.
+
+### Step 4: independent failures and partial workflow status
+
+Every branch produces an explicit `AgentReviewResult`. Expected timeouts, invalid
+results, unsupported source evidence, and raised callable exceptions become
+failed results with empty findings and fixed sanitized error messages. Returned
+failed/skipped results retain their status but their arbitrary error text is
+replaced to protect source, credentials, and raw provider bodies. Successful
+results are revalidated against Pydantic and exact source evidence; their
+findings are preserved. No replacement findings are generated.
+
+Aggregation requires all three agent results and runs once after the join:
+
+- `completed`: all three agents succeeded, including successful empty reviews.
+- `partial`: one or two succeeded and the others failed or skipped.
+- `failed`: none succeeded, including all-skipped workflows.
+
+A failed agent with zero findings is never counted as a clean successful review.
+The report remains `None`; report formatting and deduplication remain deferred.
+Duplicate-result rejection, state isolation, concurrent execution, per-agent SDK
+timeouts and zero paid retries are preserved. No logging configuration changes
+were introduced for failure handling. Custom injected callables remain responsible
+for their own safe logging and bounded execution; exceptions are never logged
+or exposed by the workflow. `asyncio.to_thread` cannot forcibly terminate a stuck
+thread, and task cancellation does not guarantee cancellation of an in-flight
+provider request. Internal graph/reducer invariant errors and process-level
+interrupts are not converted into fabricated agent results.
+
+Offline tests cover all 27 combinations of success/failed/skipped statuses,
+successful empty findings, mocked SDK timeouts and invalid JSON, injected
+exceptions and invalid evidence, all six completion orders, one aggregation per
+run, preserved findings, sanitization, and simultaneous requests with mixed
+outcomes. No live parallel Fireworks call has been made. The original mixed-result
+assertion now expects `partial` rather than `failed`, matching this status contract.
+
+### Step 5: deterministic aggregation data
+
+`reviewguard.orchestration.aggregation.aggregate_findings(agent_results, sources=...)`
+is a pure, network-free function requiring explicit results for all three agents.
+Only successful agents contribute findings. Failed/skipped statuses remain in
+`agent_statuses` with sanitized messages. Every successful original is revalidated
+against the shared Pydantic schema and its exact source before grouping. The
+shared schemas are unchanged.
+
+Two findings group only when all of these match exactly after the stated
+normalization: lexical filename (slash/dot normalization, case preserved),
+1-based start/end location (omitted end means start), category, title, and
+description. Text normalization only collapses whitespace and casefolds. Without
+a start line, evidence must also match exactly. No fuzzy, semantic, LLM, or
+line-overlap matching is used. Different concerns on the same line remain
+separate. This conservative identity may miss differently worded duplicates;
+it avoids guessing that two unrelated reports mean the same thing.
+
+Each group retains `original_findings` in full and `provenance` with every agent
+and original finding ID, including repeated identical originals. Distinct evidence,
+recommendations, suggested tests, severities and confidences remain accessible.
+The representative is an unchanged original selected by severity descending,
+then confidence descending, normalized filename/location/category/title/description,
+agent, finding ID and complete serialized original as deterministic tie-breakers.
+Severity is never upgraded due to multiplicity, and confidence is never averaged
+or treated as proof. Choosing the highest-severity original preserves conflicting
+scores in metadata instead of synthesizing a new score.
+
+The graph's existing join calls aggregation once and stores its JSON-compatible
+intermediate data in `consolidated_report`, preserving completed/partial/failed
+semantics and independent agent results. Initial report state remains `None`.
+This is structured aggregation data, not final report formatting. It can contain
+sensitive source evidence and must not be logged by callers. Returned data is
+copied away from inputs; nested original models remain editable by their owner.
+The previous report-placeholder assertions now verify structured output and
+retained statuses. No live API requests or UI changes were made for this step.
+
+### Step 6: structured review report and guarded JSON export
+
+`reviewguard.reports.builder.build_review_report(aggregation, filename=...)`
+wraps the already grounded aggregation data in `ReviewReport`. It preserves
+prioritized groups, every original, provenance, evidence, recommendations,
+confidence and suggested tests. It adds a UUID, timezone-aware UTC timestamp,
+reviewed filename, total unique findings, counts for all four severities, and
+mandatory engineering-verification and clean-review limitations. Optional
+report_id/generated_at arguments permit deterministic tests. All other fields
+are deterministic for identical aggregation input; summaries are validated.
+
+The report inherits aggregation fields instead of reimplementing deduplication
+or ranking. Agent status stays explicit: failed/skipped agents are never described
+as clean reviews. All arbitrary error metadata is replaced by fixed sanitized
+messages, including on JSON import. The builder accepts no uploaded source and
+performs no execution, network calls, or file writes. It consumes aggregation
+whose evidence has already been validated; it does not independently re-ground
+an arbitrary caller-constructed aggregation object.
+
+Use `reviewguard.reports.export.export_report_json(report)` for public JSON
+serialization and `ReviewReport.model_validate_json(text)` for a round trip.
+The exporter reads configured application .env and runtime secret values only
+for comparison, without printing them, and checks common credential/private-key
+patterns plus optional caller-provided `sensitive_values`. It examines decoded
+strings so JSON escaping cannot bypass checks. Detected secrets raise a fixed
+`UnsafeReportError`; nothing is silently redacted or removed from exact evidence.
+The graph uses this guarded export in the existing single aggregation node.
+An unsafe export prevents report release rather than returning sensitive JSON.
+Direct Pydantic serialization bypasses that additional secret screen and is for
+trusted internal use only. Pattern detection is conservative and cannot recognize
+all possible secret formats; provide additional sensitive values when needed.
+
+There is no source_code field: reports contain only validated evidence and
+finding narratives, not a copy of the uploaded file. Callers should keep evidence
+snippets minimal upstream; a snippet may itself contain sensitive code. Reports
+remain sensitive artifacts and should not be logged. No coverage percentages
+are computed. The UI and shared agent schemas remain unchanged. The graph keeps
+its existing barrier and completed/partial/failed status semantics.
+
+### Safe error-category propagation
+
+`AgentReviewResult.error_category` is an optional, additive diagnostic field using
+the shared `ErrorCategory` allowlist: `invalid_json`, `invalid_schema`,
+`invalid_source_evidence`, `recommendation_limit_exceeded`, `output_truncated`,
+`api_timeout`, `provider_error`, and `unknown_error`. Successful results have no
+error category. Failed/skipped results without a known category use unknown_error;
+unrecognized values are discarded and become unknown_error. No category is
+inferred from arbitrary error text.
+
+Each reviewer assigns known categories at its local validation/exception boundary.
+Only an explicit finish_reason=length establishes output_truncated; missing or
+other abnormal finish reasons remain unknown_error. Agent 3's count checks produce
+recommendation_limit_exceeded. Pydantic JSON syntax errors and schema failures are
+distinct, as are exact-source evidence failures and API timeouts/provider errors.
+Unclassified configuration or execution failures remain unknown_error.
+
+Graph branches retain allowlisted categories while replacing arbitrary messages
+with fixed sanitized text. Aggregation and report agent_statuses preserve those
+categories and sanitize messages again, including imported report metadata. Errors
+remain separate from findings; successful findings and workflow status semantics
+are unchanged. The previous live Agent 3 rejection cannot be reconstructed from
+discarded metadata and must still be treated as unknown_error. Tests are offline
+and no live request was made for this diagnostic change. No logging levels,
+handlers, suppression policy, request budgets, or retries were changed.

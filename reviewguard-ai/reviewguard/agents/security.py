@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from reviewguard.fireworks_client import create_fireworks_client, load_fireworks_settings
 from reviewguard.schemas import (
-    AgentReviewResult, AgentType, SourceValidationError,
+    AgentReviewResult, AgentType, ErrorCategory, SourceValidationError,
     validate_finding_against_source,
 )
 
@@ -46,8 +46,8 @@ repeat secret values in descriptions or recommendations. No fabricated findings.
 """
 
 
-def _failed(message: str) -> AgentReviewResult:
-    return AgentReviewResult(agent=AgentType.security, status="failed", error_message=message)
+def _failed(message: str, category: ErrorCategory = ErrorCategory.unknown_error) -> AgentReviewResult:
+    return AgentReviewResult(agent=AgentType.security, status="failed", error_message=message, error_category=category)
 
 
 def _sensitive_debug_logging_enabled() -> bool:
@@ -106,27 +106,32 @@ class SecurityReviewer:
                 response_format={"type": "json_object"},
                 max_tokens=2048,
             )
-            if not response.choices or response.choices[0].finish_reason != "stop":
-                return _failed("Model returned incomplete or truncated output.")
+            if not response.choices or getattr(response.choices[0], "finish_reason", None) != "stop":
+                reason = getattr(response.choices[0], "finish_reason", None) if response.choices else None
+                return _failed("Model returned incomplete or truncated output.",
+                    ErrorCategory.output_truncated if reason == "length" else ErrorCategory.unknown_error)
             content = response.choices[0].message.content
             if not isinstance(content, str) or not content.strip():
                 return _failed("Model returned empty output.")
             result = AgentReviewResult.model_validate_json(content)
             if result.agent != AgentType.security:
-                return _failed("Model returned the wrong review agent.")
+                return _failed("Model returned the wrong review agent.", ErrorCategory.invalid_schema)
             if result.status != "success":
                 return _failed("Model did not complete the security review.")
             for finding in result.findings:
                 validate_finding_against_source(finding, source, filename=filename)
             return result
-        except (ValidationError, SourceValidationError):
-            return _failed("Model response failed schema or source-evidence validation.")
+        except ValidationError as exc:
+            category = ErrorCategory.invalid_json if any(error["type"] == "json_invalid" for error in exc.errors(include_input=False)) else ErrorCategory.invalid_schema
+            return _failed("Model response failed schema or source-evidence validation.", category)
+        except SourceValidationError:
+            return _failed("Model response failed schema or source-evidence validation.", ErrorCategory.invalid_source_evidence)
         except APITimeoutError:
-            return _failed("Fireworks request timed out; no automatic retry was attempted.")
+            return _failed("Fireworks request timed out; no automatic retry was attempted.", ErrorCategory.api_timeout)
         except APIConnectionError:
-            return _failed("Fireworks connection failed; check network access.")
+            return _failed("Fireworks connection failed; check network access.", ErrorCategory.provider_error)
         except APIStatusError:
-            return _failed("Fireworks rejected the request; check model access, credentials, and quota.")
+            return _failed("Fireworks rejected the request; check model access, credentials, and quota.", ErrorCategory.provider_error)
         except Exception:
             return _failed("Security review failed due to a configuration or provider error.")
         finally:

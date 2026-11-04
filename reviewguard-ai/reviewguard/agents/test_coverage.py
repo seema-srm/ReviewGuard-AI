@@ -9,7 +9,7 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 from pydantic import ValidationError
 
 from reviewguard.fireworks_client import create_fireworks_client, load_fireworks_settings
-from reviewguard.schemas import AgentReviewResult, AgentType, SourceValidationError, validate_finding_against_source
+from reviewguard.schemas import AgentReviewResult, AgentType, ErrorCategory, SourceValidationError, validate_finding_against_source
 
 SYSTEM_PROMPT = """Review Python test scenarios: boundaries, negative/None/empty/
 malformed inputs, exceptions, regressions and parameterized pytest cases.
@@ -67,8 +67,8 @@ def _completion_metadata(response: object) -> CompletionMetadata:
     )
 
 
-def _failed(message: str) -> AgentReviewResult:
-    return AgentReviewResult(agent=AgentType.test_coverage, status="failed", error_message=message)
+def _failed(message: str, category: ErrorCategory = ErrorCategory.unknown_error) -> AgentReviewResult:
+    return AgentReviewResult(agent=AgentType.test_coverage, status="failed", error_message=message, error_category=category)
 
 
 def _debug_enabled() -> bool:
@@ -149,7 +149,7 @@ class TestCoverageReviewer:
             self.last_completion_metadata = _completion_metadata(response)
             reason = self.last_completion_metadata.finish_reason
             if reason == "length":
-                return _failed("Model reached its output limit (finish_reason=length); no partial findings accepted.")
+                return _failed("Model reached its output limit (finish_reason=length); no partial findings accepted.", ErrorCategory.output_truncated)
             if reason is None:
                 return _failed("Model response lacked a finish reason; no findings accepted.")
             if reason != "stop":
@@ -173,7 +173,7 @@ class TestCoverageReviewer:
                 count_errors.append(f"{invalid_cardinality} finding(s) violate exactly one suggested test per finding")
             if count_errors:
                 # Only numeric counts and fixed labels; no model-supplied text.
-                return _failed("Recommendation count validation failed: " + "; ".join(count_errors) + ". No findings accepted.")
+                return _failed("Recommendation count validation failed: " + "; ".join(count_errors) + ". No findings accepted.", ErrorCategory.recommendation_limit_exceeded)
             for finding in result.findings:
                 validate_finding_against_source(finding, source, filename=filename)
                 if finding.category not in {"recommended_test", "potential_gap", "verified_coverage_gap"}:
@@ -195,16 +195,16 @@ class TestCoverageReviewer:
             return result
         except ValidationError as exc:
             if any(error["type"] == "json_invalid" for error in exc.errors(include_input=False)):
-                return _failed("Model returned invalid JSON; no partial findings accepted.")
-            return _failed("Model response failed schema validation; no findings accepted.")
+                return _failed("Model returned invalid JSON; no partial findings accepted.", ErrorCategory.invalid_json)
+            return _failed("Model response failed schema validation; no findings accepted.", ErrorCategory.invalid_schema)
         except SourceValidationError:
-            return _failed("Model response failed source-evidence validation; no findings accepted.")
+            return _failed("Model response failed source-evidence validation; no findings accepted.", ErrorCategory.invalid_source_evidence)
         except APITimeoutError:
-            return _failed("Fireworks request timed out; no automatic retry was attempted.")
+            return _failed("Fireworks request timed out; no automatic retry was attempted.", ErrorCategory.api_timeout)
         except APIConnectionError:
-            return _failed("Fireworks connection failed; check network access.")
+            return _failed("Fireworks connection failed; check network access.", ErrorCategory.provider_error)
         except APIStatusError:
-            return _failed("Fireworks rejected the request; check model access, credentials, and quota.")
+            return _failed("Fireworks rejected the request; check model access, credentials, and quota.", ErrorCategory.provider_error)
         except Exception:
             return _failed("Test-coverage review failed due to a configuration or provider error.")
         finally:
