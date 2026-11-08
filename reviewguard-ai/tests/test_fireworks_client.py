@@ -2,12 +2,14 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
+from openai import OpenAI
 
 from reviewguard.fireworks_client import (
     ConfigurationError,
     FIREWORKS_ENDPOINT,
     FireworksSettings,
     create_fireworks_client,
+    create_fireworks_request_client,
     load_fireworks_settings,
 )
 from scripts.test_fireworks_connection import response_text, sanitized_error, validate_status_json
@@ -31,6 +33,13 @@ def test_client_has_no_retries_and_bounded_timeout() -> None:
     assert client.call_args.kwargs["max_retries"] == 0
     assert client.call_args.kwargs["timeout"] == 30.0
     assert client.call_args.kwargs["base_url"] == FIREWORKS_ENDPOINT
+
+
+def test_langsmith_wraps_the_configured_request_client() -> None:
+    client = create_fireworks_request_client(
+        OpenAI(api_key="not-a-real-key", base_url="https://example.invalid")
+    )
+    assert "create" in client.chat.completions.__dict__
 
 
 @pytest.mark.parametrize("values", [{}, {"FIREWORKS_API_KEY": "fake-secret", "FIREWORKS_MODEL": "m", "FIREWORKS_BASE_URL": "https://example.com"}])

@@ -1,6 +1,7 @@
 """Mock-only UI submissions and event-loop-safe workflow entry tests."""
 
 import asyncio
+from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
@@ -162,4 +163,50 @@ def test_service_missing_configuration_prevents_graph_creation():
     with patch("reviewguard.ui.review_service.load_fireworks_settings", side_effect=ConfigurationError("safe")), patch("reviewguard.ui.review_service.build_review_graph") as factory:
         with pytest.raises(ConfigurationError):
             run_review(validate_python_file("example.py", b"pass"))
+    factory.assert_not_called()
+
+
+def test_service_enables_langsmith_tracing_only_when_requested(monkeypatch):
+    value = report()
+    graph = Mock()
+    graph.ainvoke = AsyncMock(return_value={
+        "workflow_status": "completed",
+        "consolidated_report": value.model_dump(mode="json"),
+    })
+    contexts = []
+
+    @contextmanager
+    def tracing_context(**kwargs):
+        contexts.append(kwargs)
+        yield
+
+    monkeypatch.setenv("LANGSMITH_API_KEY", "not-a-real-key")
+    monkeypatch.delenv("LANGSMITH_PROJECT", raising=False)
+    with patch("reviewguard.ui.review_service.tracing_context", side_effect=tracing_context), \
+         patch("reviewguard.ui.review_service.load_fireworks_settings"), \
+         patch("reviewguard.ui.review_service.build_review_graph", return_value=graph):
+        run_review(
+            validate_python_file("example.py", b"pass\n"),
+            tracing_enabled=True,
+            trace_metadata={"evaluation_case_id": "case-1"},
+        )
+
+    assert contexts == [{
+        "enabled": True,
+        "project_name": "reviewguard",
+        "metadata": {"evaluation_case_id": "case-1"},
+    }]
+    assert graph.ainvoke.call_args.kwargs["config"] == {
+        "metadata": {"evaluation_case_id": "case-1"},
+    }
+
+
+def test_service_refuses_opted_in_tracing_without_langsmith_key(monkeypatch):
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
+    with patch("reviewguard.ui.review_service.load_fireworks_settings") as settings, \
+         patch("reviewguard.ui.review_service.build_review_graph") as factory:
+        with pytest.raises(ValueError, match="no API key"):
+            run_review(validate_python_file("example.py", b"pass\n"), tracing_enabled=True)
+    settings.assert_not_called()
     factory.assert_not_called()

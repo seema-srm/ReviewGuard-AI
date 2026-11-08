@@ -6,7 +6,11 @@ import logging
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 from pydantic import ValidationError
 
-from reviewguard.fireworks_client import create_fireworks_client, load_fireworks_settings
+from reviewguard.fireworks_client import (
+    create_fireworks_client,
+    create_fireworks_request_client,
+    load_fireworks_settings,
+)
 from reviewguard.schemas import (
     AgentReviewResult, AgentType, ErrorCategory, SourceValidationError,
     validate_finding_against_source,
@@ -97,7 +101,8 @@ class SecurityReviewer:
             # SDK construction may enable OPENAI_LOG=debug; recheck before sending data.
             if _sensitive_debug_logging_enabled():
                 return _failed("Disable SDK and transport DEBUG logging before security review to protect source and secrets.")
-            response = client.with_options(timeout=30.0, max_retries=0).chat.completions.create(
+            request_client = create_fireworks_request_client(client)
+            response = request_client.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT + "\nSchema:\n" + json.dumps(AgentReviewResult.model_json_schema())},

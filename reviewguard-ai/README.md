@@ -568,3 +568,77 @@ and blocked HTTP transport. Browser download transfer itself is not simulated
 by AppTest and has not been manually verified. No live AI requests were made.
 The prior successful-review download assertion now requires enabled download;
 all original test cases remain present.
+
+## AI evaluations and LangSmith observability
+
+The evaluation harness targets the complete code-quality, security, and test-
+coverage graph. It includes 30 candidate Python cases (10 per reviewer), exact
+source anchors, scenario labels, and suggested severities. These are **not
+reviewed ground truth** until a human adjudicator verifies each expected finding
+and records `annotation_status: "reviewed"`, `reviewer`, and `reviewer_notes`.
+No evaluation command will upload or score a dataset with pending annotations.
+The evaluation labels are candidates, not claims that model output is correct.
+
+From `reviewguard-ai`, export and inspect the candidate dataset:
+
+```powershell
+.\.venv\Scripts\python.exe -m reviewguard.evals.cli export-candidates
+.\.venv\Scripts\python.exe -m reviewguard.evals.cli validate
+```
+
+Review `evals\candidate_dataset.jsonl` with a qualified code reviewer. Keep the
+30-50 case count, verify every source anchor and expected finding (including
+negative cases), record the adjudicator and rationale, and preserve the original
+file as the versioned evaluation dataset. Do not mark a case reviewed merely to
+bypass the gate.
+
+LangSmith tracing is opt-in. Traces can contain uploaded source code, prompts,
+model outputs, and findings; use only code approved for external processing.
+Set credentials in the process environment, never commit them or add them to
+`.env`:
+
+```powershell
+$env:LANGSMITH_API_KEY = "<your LangSmith key>"
+$env:LANGSMITH_PROJECT = "reviewguard-evals"
+$env:REVIEWGUARD_LANGSMITH_TRACING = "true"
+$env:REVIEWGUARD_ALLOW_PAID_EVAL = "true"
+```
+
+Upload only the adjudicated dataset:
+
+```powershell
+.\.venv\Scripts\python.exe -m reviewguard.evals.cli upload `
+  --dataset evals\candidate_dataset.jsonl --name reviewguard-golden-v1
+```
+
+The live command requires both `--confirm-paid-runs` and the explicit environment
+authorization above. Each case invokes all three Fireworks agents (one request
+per agent, no automatic retries), so a 30-case run can make up to 90 paid model
+requests. Example baseline and post-change experiments:
+
+```powershell
+.\.venv\Scripts\python.exe -m reviewguard.evals.cli evaluate `
+  --name reviewguard-golden-v1 --experiment-prefix baseline `
+  --confirm-paid-runs
+
+# Make and document a targeted improvement, then re-run against the same dataset.
+.\.venv\Scripts\python.exe -m reviewguard.evals.cli evaluate `
+  --name reviewguard-golden-v1 --experiment-prefix improved-v1 `
+  --confirm-paid-runs
+```
+
+Per-case LangSmith feedback measures finding precision, recall, F1, exact match,
+severity accuracy, target-agent success, workflow completion, and observed
+latency. Traces include graph/agent runs and wrapped Fireworks chat-completion
+child runs; inspect those for prompts/outputs, token usage, latency, errors, and
+evaluation-case metadata. Provider cost is reported only when LangSmith supplies
+it; no cost is inferred from assumed pricing. Compare experiment aggregates and
+missed/extra finding feedback to identify failure clusters before prioritizing
+prompt or workflow changes. Report before/after deltas from the same reviewed
+cases and model configuration; do not claim improvement until measured.
+
+Ordinary UI reviews remain untraced by default. Setting
+`REVIEWGUARD_LANGSMITH_TRACING=true` explicitly enables traces for UI reviews.
+The Python test suite uses mocked evaluator runs and does not contact LangSmith
+or Fireworks. No reviewed dataset or live baseline/post-change run is included
+yet, so evaluation quality and improvement deltas remain unverified.

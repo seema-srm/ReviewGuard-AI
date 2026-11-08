@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import dotenv_values
+from langsmith.wrappers import wrap_openai
 from openai import OpenAI
 
 APP_DIRECTORY = Path(__file__).resolve().parents[1]
@@ -50,3 +51,11 @@ def create_fireworks_client(settings: FireworksSettings) -> OpenAI:
         timeout=30.0,
         max_retries=0,
     )
+
+
+def create_fireworks_request_client(client: OpenAI) -> OpenAI:
+    """Apply bounded request options, then instrument the actual request client."""
+    request_client = client.with_options(timeout=30.0, max_retries=0)
+    if isinstance(request_client, OpenAI):
+        return wrap_openai(request_client, chat_name="ReviewGuard Fireworks")
+    return request_client

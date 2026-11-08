@@ -5,7 +5,11 @@ import json
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 from pydantic import ValidationError
 
-from reviewguard.fireworks_client import create_fireworks_client, load_fireworks_settings
+from reviewguard.fireworks_client import (
+    create_fireworks_client,
+    create_fireworks_request_client,
+    load_fireworks_settings,
+)
 from reviewguard.logging_safety import suppress_sdk_logging
 from reviewguard.schemas import (
     AgentReviewResult, AgentType, ErrorCategory, SourceValidationError,
@@ -68,7 +72,9 @@ class CodeQualityReviewer:
                     model = settings.model
                 # Include any SDK child loggers created during client construction.
                 with suppress_sdk_logging():
-                    return self._review_with_client(client, model, filename, source)
+                    return self._review_with_client(
+                        create_fireworks_request_client(client), model, filename, source
+                    )
             except Exception:
                 return _failed("Code-quality review failed due to a configuration or provider error.")
             finally:
@@ -80,7 +86,7 @@ class CodeQualityReviewer:
 
     def _review_with_client(self, client: OpenAI, model: str, filename: str, source: str) -> AgentReviewResult:
         try:
-            response = client.with_options(timeout=30.0, max_retries=0).chat.completions.create(
+            response = client.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT + "\nSchema:\n" + json.dumps(AgentReviewResult.model_json_schema())},

@@ -4,3 +4,4 @@ openai>=2,<3
 python-dotenv>=1,<2
 pydantic>=2,<3
 langgraph>=1,<2
+langsmith>=0.14,<1
