@@ -108,16 +108,18 @@ class SourceValidationError(ValueError):
 
 
 def validate_finding_against_source(
-    finding: ReviewFinding, source: str, *, filename: str
+    finding: ReviewFinding, source: str, *, filename: str,
+    normalize_line_endings: bool = False,
 ) -> ReviewFinding:
     """Return the finding or raise SourceValidationError; never invent findings.
 
     Filenames must match exactly. Lines are 1-based and inclusive, consistent
     with splitlines() in the upload utilities. A missing end_line selects only
     the start line; no line reference selects the whole file. Evidence must be
-    a verbatim, contiguous substring in that selection, preserving whitespace
-    and newline characters (including CRLF). No fuzzy matching or normalization
-    is performed. This verifies grounding, not the finding's technical validity.
+    a verbatim, contiguous substring in that selection, preserving whitespace.
+    Newline normalization is opt-in and permits only CRLF/CR versus LF
+    differences; it does not change line numbers or indentation. No fuzzy
+    matching is performed. This verifies grounding, not technical validity.
     """
     if finding.filename != filename:
         raise SourceValidationError("Finding filename does not match the supplied source filename")
@@ -128,6 +130,10 @@ def validate_finding_against_source(
         if finding.line_number > len(lines) or end_line > len(lines):
             raise SourceValidationError("Finding line reference is outside the supplied source")
         selected_source = "".join(lines[finding.line_number - 1 : end_line])
-    if finding.evidence not in selected_source:
+    evidence = finding.evidence
+    if normalize_line_endings:
+        selected_source = selected_source.replace("\r\n", "\n").replace("\r", "\n")
+        evidence = evidence.replace("\r\n", "\n").replace("\r", "\n")
+    if evidence not in selected_source:
         raise SourceValidationError("Exact evidence was not found in the referenced source")
     return finding

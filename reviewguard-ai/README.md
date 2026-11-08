@@ -446,3 +446,125 @@ are unchanged. The previous live Agent 3 rejection cannot be reconstructed from
 discarded metadata and must still be treated as unknown_error. Tests are offline
 and no live request was made for this diagnostic change. No logging levels,
 handlers, suppression policy, request budgets, or retries were changed.
+
+## Phase 4, Step 1: dashboard foundation
+
+The Streamlit app now groups the interface into Source code, Review configuration,
+and Review results. It retains the Python-only uploader, 1 MiB limit, UTF-8 checks,
+empty-file handling, filename/byte-size/line-count display, and Python preview.
+Native bordered containers and responsive layouts organize the three reviewer
+descriptions without custom CSS or additional dependencies.
+
+This step does not connect the dashboard to LangGraph. The Review Code button
+still displays the exact legacy message "AI review agents will be available in
+Phase 2." A nearby explanation clarifies that it is a placeholder and no AI
+requests are sent. It is disabled until a valid upload is available. Results
+remain explicitly unrun: summary, unavailable severity counts, Not run agent
+statuses, empty findings, and a disabled JSON download. Unavailable counts are
+shown as dashes, not fabricated zeros. No configuration controls imply execution
+that has not been implemented.
+
+Headless AppTest checks cover layout, placeholder behavior, safe upload errors,
+preview removal, and no graph/network calls. Existing upload/source/non-execution
+regressions remain unchanged. Browser appearance at different viewport sizes and
+screen-reader behavior have not been manually verified.
+
+## Phase 4, Step 2: explicit workflow execution
+
+Review Code now invokes the existing LangGraph workflow through
+`reviewguard.ui.review_service.run_review`. Uploading, previewing, and ordinary
+Streamlit reruns never call this service. Clicking Review Code sends the uploaded
+source to the configured Fireworks model via the three real concurrent reviewers
+and may incur charges. No live call was made during this implementation or its
+automated verification.
+
+Execution is separated from rendering. The synchronous service owns a dedicated
+worker/event loop, checks application .env configuration before graph execution,
+and invokes the existing async graph exactly once with fresh state. External
+tracing is disabled within the execution context. Existing clients, timeouts,
+token budgets and zero automatic retries remain unchanged. It stores no SDK
+clients or source files. Custom exceptions are shown only as fixed safe messages.
+
+The dashboard stores the resulting ReviewReport in session state, keyed to a
+SHA-256 fingerprint of filename and source. Changing, removing, or invalidating
+the upload clears the previous result. A queued/running/attempted guard disables
+duplicate submission while execution is active and after an attempt. A spinner
+indicates execution. Enable another review clears the result and re-arms the
+button without inference; a separate Review Code click is required for any retry.
+No review automatically retries after a failure.
+
+The results area shows completed/partial/failed workflow status, unique finding
+count, and explicit agent statuses. Successful zero-finding reviews are distinct
+from failed/skipped agents, which are marked unavailable with allowlisted error
+categories. Reports remain in memory across reruns. Detailed findings, severity
+filters, and JSON download are deferred; download controls remain disabled.
+
+All existing test cases are retained. Assertions that expected the old Phase 2
+placeholder now verify mocked completed workflow results instead; their upload
+validation and source-safety checks remain. New AppTest and service tests verify
+submission counts, persistence, invalidation, statuses, sanitized errors, running
+guards, configuration preflight and active-event-loop compatibility. Network calls
+are blocked in the new tests. Live dashboard execution and browser behavior have
+not been manually verified. A browser/session restart loses the in-memory result;
+the running guard is session-local and is not a cross-session idempotency system.
+
+## Phase 4, Step 3: detailed findings display
+
+The dashboard renders the persisted consolidated ReviewReport directly. Severity
+metrics use its existing unique counts, and finding expanders follow its existing
+priority order; no new aggregation or sorting is performed. Each expander shows
+the title, severity, reviewer, filename, line/range, description, exact source
+evidence, recommended fix, original confidence value and optional test scenarios.
+Deduplicated groups show contributing agent names and original IDs, plus original
+evidence, recommendations, confidence/severity values and test suggestions.
+
+All model-generated narrative is rendered with `st.text`, evidence with Python
+`st.code`, and expander labels contain only fixed text, indices and enum severity.
+Model HTML/Markdown is never interpreted as rich content. The existing guarded
+export checks the report before display; detected secrets block report rendering
+with a fixed safe message. No download is enabled by that check. This reuses the
+existing guard and does not alter report or agent business logic. Secret detection
+remains conservative, not a guarantee for arbitrary unknown secret formats.
+
+Failed agents trigger a clear warning while successful findings remain visible.
+Successful zero-finding reviews and unsuccessful reviews without accepted findings
+have different notices. Engineering verification warnings remain visible. Results
+persist on rerun and disappear when the upload changes. Submission guards,
+spinner, explicit retry preparation and request budgets are unchanged. Severity
+filters, JSON download and GitHub integration are deferred.
+
+AppTest uses mocked orchestration to check counts/order, exact evidence including
+indentation, line ranges, test suggestions, duplicate provenance, all workflow
+statuses, zero-findings notices, plain-text handling, configured-secret blocking,
+session persistence and upload invalidation without repeated requests. The old
+zero-result dashboard assertion now requires the new explicit successful-empty
+notice. Browser/screen-reader behavior and live dashboard execution remain
+unverified; no live API requests were made in this step.
+
+## Phase 4, Step 4: severity filters and JSON download
+
+The saved report's findings can be filtered by All (default), Critical, High,
+Medium, or Low. Filtering retains existing priority order and original finding
+indices. The dashboard shows the visible/total count and a helpful no-match
+notice. Summary severity counts, agent statuses, and failure warnings always
+describe the full report, not the filtered subset. Filter changes never invoke
+the execution service, and a new upload or explicit review re-arming resets the
+selection to All.
+
+Download JSON Report uses the existing guarded exporter and a fixed descriptive
+filename `reviewguard-report.json` with MIME type `application/json`. The payload
+always contains the full validated report, regardless of filter. No raw source
+field is added. No report means disabled download; rejected exports show only a
+sanitized error and offer no download or fallback. Secret checks are repeated
+before rendering/download preparation. Existing secret-detection limitations
+still apply, and evidence snippets remain sensitive data.
+
+The native download uses `on_click="ignore"`, so a download does not request an
+app rerun. Ordinary reruns also cannot bypass the existing explicit-submission
+guard. AppTest checks prepared download bytes against the guarded exporter,
+round-trip validation, MIME/filename, ignore-rerun configuration, filters,
+persistence, warnings, rejection, and upload invalidation with mocked orchestration
+and blocked HTTP transport. Browser download transfer itself is not simulated
+by AppTest and has not been manually verified. No live AI requests were made.
+The prior successful-review download assertion now requires enabled download;
+all original test cases remain present.

@@ -151,15 +151,17 @@ class TestCoverageReviewer:
             if reason == "length":
                 return _failed("Model reached its output limit (finish_reason=length); no partial findings accepted.", ErrorCategory.output_truncated)
             if reason is None:
-                return _failed("Model response lacked a finish reason; no findings accepted.")
+                return _failed("Model response lacked a finish reason; no findings accepted.", ErrorCategory.invalid_schema)
+            if reason == "content_filter":
+                return _failed("Model did not finish normally (response filtered); no findings accepted.", ErrorCategory.provider_error)
             if reason != "stop":
-                return _failed("Model did not finish normally; no findings accepted.")
+                return _failed("Model did not finish normally; no findings accepted.", ErrorCategory.invalid_schema)
             content = response.choices[0].message.content
             if not isinstance(content, str) or not content.strip():
-                return _failed("Model returned empty output.")
+                return _failed("Model returned empty output (invalid JSON).", ErrorCategory.invalid_json)
             result = AgentReviewResult.model_validate_json(content)
             if result.agent != AgentType.test_coverage or result.status != "success":
-                return _failed("Model did not complete the requested test-coverage review.")
+                return _failed("Model did not complete the requested test-coverage review.", ErrorCategory.invalid_schema)
             findings_count = len(result.findings)
             suggested_test_counts = [len(item.suggested_tests or []) for item in result.findings]
             suggested_tests_count = sum(suggested_test_counts)
@@ -177,21 +179,21 @@ class TestCoverageReviewer:
             for finding in result.findings:
                 validate_finding_against_source(finding, source, filename=filename)
                 if finding.category not in {"recommended_test", "potential_gap", "verified_coverage_gap"}:
-                    return _failed("Model returned an unsupported test recommendation category.")
+                    return _failed("Model returned an unsupported test recommendation category.", ErrorCategory.invalid_schema)
                 # Inspect explanatory output, not exact evidence, which may contain percentages.
                 narrative = " ".join([finding.title, finding.description, finding.recommendation, *finding.suggested_tests])
                 if re.search(r"\d\s*(?:%|percent\b)|\bcoverage\s*(?:is|of|:|=)?\s*\d", narrative, re.IGNORECASE):
-                    return _failed("Model returned an unsupported coverage percentage claim.")
+                    return _failed("Model returned an unsupported coverage percentage claim.", ErrorCategory.invalid_schema)
                 if not existing_tests and (
                     finding.category == "potential_gap" or
                     re.search(r"\b(missing|untested|uncovered)\b|\bnot\s+covered\b", narrative, re.IGNORECASE)
                 ):
-                    return _failed("Without existing tests, findings must be recommendations, not missing-test claims.")
+                    return _failed("Without existing tests, findings must be recommendations, not missing-test claims.", ErrorCategory.invalid_schema)
                 if finding.category == "verified_coverage_gap":
                     if finding.line_number is None or not all(
                         line in missing_lines for line in range(finding.line_number, (finding.end_line or finding.line_number) + 1)
                     ):
-                        return _failed("Claimed coverage gap is not supported by supplied measurements.")
+                        return _failed("Claimed coverage gap is not supported by supplied measurements.", ErrorCategory.invalid_schema)
             return result
         except ValidationError as exc:
             if any(error["type"] == "json_invalid" for error in exc.errors(include_input=False)):
@@ -199,14 +201,14 @@ class TestCoverageReviewer:
             return _failed("Model response failed schema validation; no findings accepted.", ErrorCategory.invalid_schema)
         except SourceValidationError:
             return _failed("Model response failed source-evidence validation; no findings accepted.", ErrorCategory.invalid_source_evidence)
-        except APITimeoutError:
+        except (APITimeoutError, TimeoutError):
             return _failed("Fireworks request timed out; no automatic retry was attempted.", ErrorCategory.api_timeout)
         except APIConnectionError:
             return _failed("Fireworks connection failed; check network access.", ErrorCategory.provider_error)
         except APIStatusError:
             return _failed("Fireworks rejected the request; check model access, credentials, and quota.", ErrorCategory.provider_error)
         except Exception:
-            return _failed("Test-coverage review failed due to a configuration or provider error.")
+            return _failed("Test-coverage review failed; details suppressed.")
         finally:
             try:
                 if owned_client and client is not None:

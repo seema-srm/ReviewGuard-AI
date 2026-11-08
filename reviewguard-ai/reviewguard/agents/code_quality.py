@@ -24,9 +24,12 @@ Set agent to code_quality and status to success. Use an empty findings list when
 no issues are supported by evidence. Give each finding a unique finding_id,
 actionable recommendation, and an honest confidence between 0 and 1. Use only
 CRITICAL, HIGH, MEDIUM, or LOW severity. Copy filename exactly. Line references
-are 1-based and inclusive. Evidence must be an exact contiguous substring from
-the referenced lines, preserving whitespace and newline characters. Omit end_line
-for a single line. Do not invent evidence, findings, filenames, or line references.
+are 1-based and inclusive; line_number identifies the first quoted line and
+end_line identifies the last quoted line. Evidence must quote code exactly as
+written in source, as one contiguous snippet. Do not paraphrase, reformat, omit
+indentation inside the quote, or include Markdown fences. For multiline evidence,
+include the complete snippet and set end_line accurately. Omit end_line for a
+single-line quote. Do not invent evidence, findings, filenames, or line references.
 """
 
 def _failed(message: str, category: ErrorCategory = ErrorCategory.unknown_error) -> AgentReviewResult:
@@ -100,7 +103,9 @@ class CodeQualityReviewer:
             if result.status != "success":
                 return _failed("Model did not complete the code-quality review.")
             for finding in result.findings:
-                validate_finding_against_source(finding, source, filename=filename)
+                validate_finding_against_source(
+                    finding, source, filename=filename, normalize_line_endings=True
+                )
             return result
         except ValidationError as exc:
             category = ErrorCategory.invalid_json if any(error["type"] == "json_invalid" for error in exc.errors(include_input=False)) else ErrorCategory.invalid_schema

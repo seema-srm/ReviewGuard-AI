@@ -92,7 +92,8 @@ def test_real_agents_assign_known_categories(reviewer, agent, failure, category)
             finish_reason=reason, message=SimpleNamespace(content=payload))])
     result = reviewer(client, "mock-model").review("example.py", SOURCE)
     assert result.status == "failed" and not result.findings
-    assert result.error_category.value == category
+    expected_category = "invalid_schema" if failure == "missing_reason" and reviewer is TestCoverageReviewer else category
+    assert result.error_category.value == expected_category
     assert "PRIVATE" not in result.model_dump_json()
     client.chat.completions.create.assert_called_once()
     client.with_options.assert_called_once_with(timeout=30.0, max_retries=0)
@@ -108,6 +109,35 @@ def test_coverage_count_failure_is_explicit():
     result = TestCoverageReviewer(client, "m").review("example.py", SOURCE)
     assert result.error_category == ErrorCategory.recommendation_limit_exceeded
     assert not result.findings
+
+
+@pytest.mark.parametrize("reason,content,expected", [
+    (None, "{}", ErrorCategory.invalid_schema),
+    ("stop", "", ErrorCategory.invalid_json),
+    ("content_filter", "{}", ErrorCategory.provider_error),
+    ("tool_calls", "{}", ErrorCategory.invalid_schema),
+])
+def test_coverage_completion_failures_keep_specific_categories(reason, content, expected):
+    client = Mock()
+    client.with_options.return_value = client
+    client.chat.completions.create.return_value = SimpleNamespace(choices=[SimpleNamespace(
+        finish_reason=reason, message=SimpleNamespace(content=content))])
+    result = TestCoverageReviewer(client, "m").review("example.py", SOURCE)
+    assert result.status == "failed" and result.findings == []
+    assert result.error_category == expected
+    client.chat.completions.create.assert_called_once()
+
+
+def test_coverage_builtin_timeout_is_classified_without_retry_or_leakage(caplog, capsys):
+    client = Mock()
+    client.with_options.return_value = client
+    client.chat.completions.create.side_effect = TimeoutError("PRIVATE_PROVIDER_SOURCE")
+    result = TestCoverageReviewer(client, "m").review("example.py", SOURCE)
+    assert result.status == "failed" and result.findings == []
+    assert result.error_category == ErrorCategory.api_timeout
+    assert "PRIVATE" not in result.model_dump_json() + caplog.text + capsys.readouterr().out
+    client.chat.completions.create.assert_called_once()
+    client.with_options.assert_called_once_with(timeout=30.0, max_retries=0)
 
 
 @pytest.mark.parametrize("kind,expected", [("timeout", "api_timeout"), ("provider", "provider_error"), ("unknown", "unknown_error")])

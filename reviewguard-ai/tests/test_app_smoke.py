@@ -7,6 +7,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 APP_PATH = Path(__file__).resolve().parents[1] / "app.py"
+pytestmark = pytest.mark.usefixtures("mock_ui_review")
 
 
 class MemoryUpload(BytesIO):
@@ -31,7 +32,7 @@ def test_upload_preview_and_review_button() -> None:
         assert app.code[0].value == "x = 1"
         app.button[0].click().run()
         assert not app.exception
-        assert app.info[0].value == "AI review agents will be available in Phase 2."
+        assert app.success[0].value == "Review status: completed"
 
 
 @pytest.mark.parametrize("name, data, error", [("bad.txt", b"pass", "extension"), ("bad.py", b"\xff", "UTF-8"), ("large.py", b" " * (1024 * 1024 + 1), "limit")])
@@ -59,7 +60,7 @@ def test_sample_upload_metadata_and_source(filename: str) -> None:
         assert app.code[0].proto.language == "python"
         app.button[0].click().run()
         assert not app.exception
-        assert app.info[0].value == "AI review agents will be available in Phase 2."
+        assert app.success[0].value == "Review status: completed"
 
 
 def test_empty_upload_ui() -> None:

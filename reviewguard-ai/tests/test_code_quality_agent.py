@@ -58,6 +58,50 @@ def test_valid_finding(client: Mock, finding: dict) -> None:
     assert not client.close.called
 
 
+def test_prompt_requires_verbatim_evidence_and_accurate_multiline_references(client: Mock) -> None:
+    respond(client, [])
+    assert CodeQualityReviewer(client, "m").review("example.py", SOURCE).status == "success"
+    prompt = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "Do not paraphrase" in prompt
+    assert "set end_line accurately" in prompt
+    assert "Do not invent evidence" in prompt
+
+
+@pytest.mark.parametrize("source,evidence,start,end", [
+    ("def f():\n    return 1\n", "    return 1", 2, None),
+    ("if value:\r\n    return value\r\n", "if value:\n    return value", 1, 2),
+    ("if value:\r    return value\r", "if value:\n    return value", 1, 2),
+])
+def test_exact_and_multiline_evidence_accepts_line_ending_variants(
+    client: Mock, finding: dict, source: str, evidence: str, start: int, end: int | None
+) -> None:
+    respond(client, [{
+        **finding, "evidence": evidence, "line_number": start, "end_line": end,
+    }])
+    result = CodeQualityReviewer(client, "m").review("example.py", source)
+    assert result.status == "success"
+    assert result.findings[0].evidence == evidence
+
+
+@pytest.mark.parametrize("source,evidence,start,end", [
+    ("if value:\r\n    return value\r\n", "if value:\n  return value", 1, 2),
+    ("header\n    return value\n", "return value", 1, None),
+    ("header\n    return value\n", "return value", 3, None),
+    ("header\n    return value\n", "return other", 2, None),
+    ("header\n    return value\n", "return  value", 2, None),
+])
+def test_unsupported_or_misreferenced_evidence_is_rejected(
+    client: Mock, finding: dict, source: str, evidence: str, start: int, end: int | None
+) -> None:
+    respond(client, [{
+        **finding, "evidence": evidence, "line_number": start, "end_line": end,
+    }])
+    result = CodeQualityReviewer(client, "m").review("example.py", source)
+    assert result.status == "failed"
+    assert result.findings == []
+    assert result.error_category == "invalid_source_evidence"
+
+
 def test_multiple_findings(client: Mock, finding: dict) -> None:
     respond(client, [finding, {**finding, "finding_id": "quality-2"}])
     assert len(CodeQualityReviewer(client, "m").review("example.py", SOURCE).findings) == 2
