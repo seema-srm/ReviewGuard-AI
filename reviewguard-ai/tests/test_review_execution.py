@@ -36,7 +36,8 @@ def report(status="completed", filename="example.py"):
 
 @pytest.fixture(autouse=True)
 def block_network():
-    with patch("httpx.Client.send", side_effect=AssertionError("Network prohibited")) as send:
+    with patch("httpx.Client.send", side_effect=AssertionError("Network prohibited")) as send, \
+         patch("reviewguard.ui.review_service.load_langfuse_settings", return_value=None):
         yield
     send.assert_not_called()
 
@@ -210,3 +211,56 @@ def test_service_refuses_opted_in_tracing_without_langsmith_key(monkeypatch):
             run_review(validate_python_file("example.py", b"pass\n"), tracing_enabled=True)
     settings.assert_not_called()
     factory.assert_not_called()
+
+
+@pytest.mark.parametrize("flush_fails", [False, True])
+@pytest.mark.parametrize("workflow_fails", [False, True])
+def test_service_passes_langfuse_callbacks_and_flushes_only_when_enabled(flush_fails, workflow_fails):
+    value = report()
+    graph = Mock()
+    graph.ainvoke = AsyncMock(return_value={
+        "workflow_status": "completed",
+        "consolidated_report": value.model_dump(mode="json"),
+    })
+    langfuse_settings = Mock(public_key="public-placeholder")
+    langfuse_client = Mock()
+    if flush_fails:
+        langfuse_client.flush.side_effect = RuntimeError("telemetry unavailable")
+    if workflow_fails:
+        graph.ainvoke.side_effect = ValueError("workflow unavailable")
+    handler = Mock()
+    upload = validate_python_file("example.py", b"pass\n")
+
+    with patch(
+        "reviewguard.ui.review_service.load_langfuse_settings",
+        return_value=langfuse_settings,
+    ), patch(
+        "reviewguard.ui.review_service.create_langfuse_client",
+        return_value=langfuse_client,
+    ), patch(
+        "reviewguard.ui.review_service.CallbackHandler",
+        return_value=handler,
+    ) as handler_factory, patch(
+        "reviewguard.ui.review_service.load_fireworks_settings"
+    ), patch(
+        "reviewguard.ui.review_service.build_review_graph",
+        return_value=graph,
+    ):
+        if workflow_fails:
+            with pytest.raises(ValueError, match="workflow unavailable"):
+                run_review(upload, langfuse_tracing_enabled=True,
+                           trace_metadata={"case_id": "offline-case"})
+        else:
+            result = run_review(
+                upload,
+                langfuse_tracing_enabled=True,
+                trace_metadata={"case_id": "offline-case"},
+            )
+            assert result == value
+
+    handler_factory.assert_called_once_with(public_key="public-placeholder")
+    assert graph.ainvoke.call_args.kwargs["config"] == {
+        "metadata": {"case_id": "offline-case"},
+        "callbacks": [handler],
+    }
+    langfuse_client.flush.assert_called_once()

@@ -5,11 +5,14 @@ Importing this module does not read credentials or make network requests.
 
 import os
 from dataclasses import dataclass, field
+from functools import wraps
 from pathlib import Path
 
 from dotenv import dotenv_values
 from langsmith.wrappers import wrap_openai
 from openai import OpenAI
+
+from reviewguard.langfuse_client import get_active_langfuse_client
 
 APP_DIRECTORY = Path(__file__).resolve().parents[1]
 FIREWORKS_ENDPOINT = "https://api.fireworks.ai/inference/v1"
@@ -57,5 +60,35 @@ def create_fireworks_request_client(client: OpenAI) -> OpenAI:
     """Apply bounded request options, then instrument the actual request client."""
     request_client = client.with_options(timeout=30.0, max_retries=0)
     if isinstance(request_client, OpenAI):
+        langfuse_client = get_active_langfuse_client()
+        if langfuse_client is not None:
+            create_completion = request_client.chat.completions.create
+
+            @wraps(create_completion)
+            def trace_completion(*args, **kwargs):
+                with langfuse_client.start_as_current_observation(
+                    as_type="generation",
+                    name="ReviewGuard Fireworks",
+                    model=kwargs.get("model"),
+                    input={"messages": kwargs.get("messages")},
+                ) as observation:
+                    response = create_completion(*args, **kwargs)
+                    usage = getattr(response, "usage", None)
+                    usage_details = {}
+                    for field_name, label in (
+                        ("prompt_tokens", "input"),
+                        ("completion_tokens", "output"),
+                        ("total_tokens", "total"),
+                    ):
+                        count = getattr(usage, field_name, None)
+                        if type(count) is int and count >= 0:
+                            usage_details[label] = count
+                    observation.update(
+                        output=response.model_dump(mode="json"),
+                        usage_details=usage_details or None,
+                    )
+                    return response
+
+            request_client.chat.completions.create = trace_completion
         return wrap_openai(request_client, chat_name="ReviewGuard Fireworks")
     return request_client

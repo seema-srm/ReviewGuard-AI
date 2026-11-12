@@ -583,7 +583,7 @@ From `reviewguard-ai`, export and inspect the candidate dataset:
 
 ```powershell
 .\.venv\Scripts\python.exe -m reviewguard.evals.cli export-candidates
-.\.venv\Scripts\python.exe -m reviewguard.evals.cli validate
+.\.venv\Scripts\python.exe -m reviewguard.evals.cli validate --dataset evals\reviewed_golden_v1.jsonl
 ```
 
 Review `evals\candidate_dataset.jsonl` with a qualified code reviewer. Keep the
@@ -608,7 +608,7 @@ Upload only the adjudicated dataset:
 
 ```powershell
 .\.venv\Scripts\python.exe -m reviewguard.evals.cli upload `
-  --dataset evals\candidate_dataset.jsonl --name reviewguard-golden-v1
+  --dataset evals\reviewed_golden_v1.jsonl --name reviewguard-golden-v1
 ```
 
 The live command requires both `--confirm-paid-runs` and the explicit environment
@@ -640,5 +640,27 @@ cases and model configuration; do not claim improvement until measured.
 Ordinary UI reviews remain untraced by default. Setting
 `REVIEWGUARD_LANGSMITH_TRACING=true` explicitly enables traces for UI reviews.
 The Python test suite uses mocked evaluator runs and does not contact LangSmith
-or Fireworks. No reviewed dataset or live baseline/post-change run is included
-yet, so evaluation quality and improvement deltas remain unverified.
+or Fireworks. `evals/reviewed_golden_v1.jsonl` contains 30 cases marked reviewed
+with reviewer-01's annotation metadata and passes the dataset validation gate. The
+original `evals/candidate_dataset.jsonl` retains the pending candidate annotations.
+No live baseline/post-change experiment results are included, so measured model
+quality and improvement deltas remain unverified.
+
+## Langfuse tracing (opt-in)
+
+Langfuse traces are disabled unless `REVIEWGUARD_LANGFUSE_TRACING=true` is set
+in the application `.env` or process environment. Configure
+`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and `LANGFUSE_BASE_URL` there;
+`LANGFUSE_HOST` is accepted for existing configurations. `.env.example` contains
+placeholders only. The Langfuse Python SDK 5 integration uses LangGraph callbacks
+and traces the Fireworks generations, including provider-reported input, output,
+and total token counts when available. It performs no connectivity check at
+startup. Trace flushing is attempted after successful and failed graph execution;
+a flush failure does not discard a completed report or replace a workflow error.
+
+**When enabled, traces include uploaded source code, prompts, model responses,
+and findings.** Only enable this for code approved for external processing.
+LangSmith tracing is separately opt-in; enabling both sends trace data to both
+services. Pytest uses mocks and does not contact Langfuse, LangSmith, or Fireworks.
+Live Langfuse trace delivery and dashboard browser behavior still require manual
+verification. No paid requests are needed for the offline tests.

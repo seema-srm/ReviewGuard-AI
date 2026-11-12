@@ -18,7 +18,8 @@ class MemoryUpload(BytesIO):
 
 
 def test_app_startup() -> None:
-    app = AppTest.from_file(str(APP_PATH)).run()
+    # Cold SDK imports can exceed AppTest's three-second default on CI/Windows.
+    app = AppTest.from_file(str(APP_PATH)).run(timeout=10)
     assert not app.exception
     assert app.title[0].value == "ReviewGuard AI"
     assert app.button[0].disabled
