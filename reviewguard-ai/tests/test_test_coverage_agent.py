@@ -334,3 +334,88 @@ def test_prompt_defines_one_scenario_per_finding(client: Mock) -> None:
     assert "zero to FIVE findings" in prompt
     assert "EXACTLY ONE suggested_tests entry" in prompt
     assert "inputs=...; expected=..." in prompt
+
+
+@pytest.mark.parametrize("text", [
+    "Recommend a test for a missing file and assert FileNotFoundError.",
+    "Recommend a missing dictionary key test; expected KeyError.",
+    "Use percent=0 and percent=100 as discount boundaries.",
+    "test_discount: inputs=0%, 100%; expected full price, zero price.",
+    "Application discount values include 20 percent and 100 percent.",
+    "Coverage is unknown; recommend testing a 50% discount.",
+])
+@pytest.mark.parametrize("field", ["title", "description", "recommendation", "suggested_tests"])
+def test_domain_inputs_are_not_mistaken_for_test_coverage_claims(client, text, field):
+    respond(client, [finding(**{field: [text] if field == "suggested_tests" else text})])
+    reviewer = TestCoverageReviewer(client, "m")
+    result = reviewer.review("example.py", SOURCE)
+    assert result.status == "success"
+    assert reviewer.last_validation_diagnostics.stage == "accepted"
+
+
+@pytest.mark.parametrize("text,stage", [
+    ("Coverage is 80%.", "coverage_claim"),
+    ("Coverage: 80", "coverage_claim"),
+    ("80 percent line coverage.", "coverage_claim"),
+    ("Tests cover 80 percent.", "coverage_claim"),
+    ("80% of the code is covered.", "coverage_claim"),
+    ("Lines covered 80%.", "coverage_claim"),
+    ("test_measurement: expected coverage=100%", "coverage_claim"),
+    ("Missing tests for empty input.", "missing_test_claim"),
+    ("Tests are absent.", "missing_test_claim"),
+    ("No test covers this boundary.", "missing_test_claim"),
+    ("There is a lack of tests.", "missing_test_claim"),
+    ("This branch is not currently covered.", "missing_test_claim"),
+    ("This path is uncovered.", "missing_test_claim"),
+])
+def test_actual_coverage_and_missing_test_claims_still_fail_closed(client, text, stage):
+    respond(client, [finding(), finding(description=text)])
+    reviewer = TestCoverageReviewer(client, "m")
+    result = reviewer.review("example.py", SOURCE)
+    assert result.status == "failed" and not result.findings
+    assert reviewer.last_validation_diagnostics.stage == stage
+    assert reviewer.last_validation_diagnostics.finding_index == 1
+    client.chat.completions.create.assert_called_once()
+
+
+@pytest.mark.parametrize("changes,issue", [
+    ({"filename": "PRIVATE_FILENAME"}, "filename"),
+    ({"line_number": 3}, "line_range"),
+    ({"evidence": "PRIVATE_REJECTED_EVIDENCE"}, "evidence_not_in_source"),
+    ({"line_number": 1}, "evidence_outside_range"),
+])
+def test_grounding_diagnostics_are_allowlisted_and_never_repair_evidence(client, changes, issue, caplog, capsys):
+    from dataclasses import FrozenInstanceError, asdict
+
+    respond(client, [finding(), finding(**changes)])
+    reviewer = TestCoverageReviewer(client, "m")
+    result = reviewer.review("example.py", SOURCE)
+    diagnostic = reviewer.last_validation_diagnostics
+    assert result.status == "failed" and not result.findings
+    assert asdict(diagnostic) == {"stage": "source_evidence", "finding_index": 1, "source_issue": issue}
+    with pytest.raises(FrozenInstanceError):
+        diagnostic.stage = "accepted"
+    assert "PRIVATE" not in repr(diagnostic) + result.model_dump_json() + caplog.text + capsys.readouterr().out
+    client.chat.completions.create.assert_called_once()
+    # Starting another call never exposes metadata from the previous response.
+    assert reviewer.review("example.py", "").status == "success"
+    assert reviewer.last_validation_diagnostics.stage == "accepted"
+    assert reviewer.last_validation_diagnostics.finding_index is None
+    assert reviewer.last_validation_diagnostics.source_issue is None
+    assert reviewer.last_completion_metadata.response_received is False
+
+
+def test_numbered_application_lines_preserve_original_source_and_test_separation(client):
+    source = "def first(values):\r\n\treturn values[0]\r\n"
+    tests = {"test_first.py": "# PRIVATE_TEST_TEXT\n"}
+    respond(client, [finding(evidence="\treturn values[0]", end_line=2)])
+    assert TestCoverageReviewer(client, "m").review("example.py", source, existing_tests=tests).status == "success"
+    messages = client.chat.completions.create.call_args.kwargs["messages"]
+    data = json.loads(messages[1]["content"])
+    assert data["source"] == source
+    assert data["source_lines"] == [
+        {"line_number": 1, "text": "def first(values):"},
+        {"line_number": 2, "text": "\treturn values[0]"},
+    ]
+    assert data["existing_tests"] == tests
+    assert "PRIVATE_TEST_TEXT" not in messages[0]["content"]

@@ -212,6 +212,48 @@ No raw response text, reasoning trace, source, or credentials are retained there
 reasons, empty output, invalid JSON, invalid schemas, and invalid source evidence
 all fail closed with distinct sanitized errors and no fabricated findings.
 
+### Coverage validation diagnostics and scenario wording
+
+`reviewer.last_validation_diagnostics` is an immutable, per-call record containing
+only a fixed validation stage, an optional zero-based finding index, and a fixed
+source-error code. It distinguishes schema, count, category, unsupported coverage
+claim, unsupported missing-test claim, measured-gap, and source-grounding failures.
+Source-error codes distinguish filename/range problems, evidence absent from the
+source, and evidence present outside the cited range. No rejected response text,
+source, credentials, or arbitrary exception messages are retained in this record.
+Both completion and validation diagnostics reset before each call.
+
+Coverage claim checks require coverage-related wording rather than rejecting
+every percentage. Application inputs such as a 0% discount, or scenarios involving
+missing files/keys, are allowed. Numeric coverage claims and common assertions of
+missing tests without supplied tests still fail closed. These text heuristics
+remain conservative checks, not a semantic proof against every possible claim.
+
+The prompt explicitly separates recommendations from absence claims and receives
+numbered application lines alongside the original unmodified source. Evidence
+is still checked against that original source and cited range with exact matching.
+No evidence is rewritten, no findings are dropped to repair a result, and the
+4,096-token budget, 30-second request timeout, one-suggestion/five-finding limits,
+and zero automatic inference retries are unchanged.
+
+Replay coverage alone against the reviewed dataset using:
+
+```powershell
+..\.venv\Scripts\python.exe scripts\check_coverage_validation.py `
+  --dataset evals\reviewed_golden_v1.jsonl `
+  --baseline evals\results\baseline-2026-11-11.jsonl `
+  --output evals\results\coverage-unique-name.jsonl --confirm-paid-runs
+```
+
+Each selected case makes at most one paid request. Add `--failed-only` to select
+only baseline cases with a failed coverage branch. Output must not already exist;
+results include sanitized diagnostics and accepted findings, never rejected raw
+completions. The replay does not enable external tracing or rerun the other agents.
+The November 11 verification accepted 30/30 coverage-only cases versus 18/30
+coverage branches in the original baseline. See
+[`evals/results/coverage-validation-fix-2026-11-11.md`](evals/results/coverage-validation-fix-2026-11-11.md)
+for the diagnosis, preserved checks, and limits of that comparison.
+
 The first failed live review did not retain its finish reason or usage. Its
 generic error was generated before JSON parsing, so invalid JSON was not the
 observed validation failure. Truncation, reasoning consuming the budget, and

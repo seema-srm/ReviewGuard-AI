@@ -1,0 +1,10 @@
+{
+  "cases": 12,
+  "successes": 4,
+  "failure_stages": {
+    "missing_test_claim": 5,
+    "source_evidence": 1,
+    "coverage_claim": 1,
+    "request": 1
+  }
+}
