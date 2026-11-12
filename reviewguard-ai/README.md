@@ -643,8 +643,43 @@ The Python test suite uses mocked evaluator runs and does not contact LangSmith
 or Fireworks. `evals/reviewed_golden_v1.jsonl` contains 30 cases marked reviewed
 with reviewer-01's annotation metadata and passes the dataset validation gate. The
 original `evals/candidate_dataset.jsonl` retains the pending candidate annotations.
-No live baseline/post-change experiment results are included, so measured model
-quality and improvement deltas remain unverified.
+No live LangSmith baseline/post-change experiment results are included. A local
+30-case baseline is saved in `evals/results/baseline-2026-11-11.md` with raw
+reports and summary JSON. No post-change quality improvement has been measured.
+
+## Local quality baseline without LangSmith
+
+The local runner uses the same three-agent workflow and reviewed cases without
+requiring a LangSmith account. From `reviewguard-ai`, run:
+
+```powershell
+..\.venv\Scripts\python.exe -m reviewguard.evals.local `
+  --dataset evals\reviewed_golden_v1.jsonl `
+  --output evals\results\baseline-unique-name.jsonl --confirm-paid-runs
+```
+
+This makes at most 90 paid Fireworks requests for 30 cases, with no inference
+retries. Both LangSmith and Langfuse tracing are explicitly disabled for this
+command. Results are saved locally one case at a time, including the full report,
+reference findings, model ID, dataset hash, statuses, latency, and scores. The
+output file must not already exist. A companion `.summary.json` contains macro
+averages overall and per target reviewer. Each case runs all three agents, but
+finding quality is scored only for that case's designated target reviewer.
+
+Scores match reference anchors against evidence verbatim with one-to-one
+matching; they do not verify the semantic correctness of model prose. Unmatched
+predictions count as extras even when a human might accept them. Successful
+negative cases receive precision/recall/F1/exact-match of one; unavailable target
+agents receive zero rather than being mistaken for correct clean reviews.
+Severity accuracy is averaged per case, with zero for cases without a match;
+it should not be read as accuracy among matched findings. Consult the saved
+reports before deciding which prompts or labels need changes.
+
+The November 11 baseline achieved macro anchor F1 of 64.3% (code quality 100%,
+security 80%, test coverage 13%). Only 18/30 full workflows completed: test
+coverage failed validation in 12/30 invocations. See
+[`evals/results/baseline-2026-11-11.md`](evals/results/baseline-2026-11-11.md)
+for scoring limits, disagreement analysis, and reproducibility details.
 
 ## Langfuse tracing (opt-in)
 

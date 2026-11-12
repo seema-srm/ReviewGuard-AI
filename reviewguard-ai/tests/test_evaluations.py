@@ -95,6 +95,13 @@ def test_scoring_does_not_count_other_agents_as_target_predictions():
     assert scores["exact_match"] == 1
 
 
+@pytest.mark.parametrize("actual", [None, report([], target_status="failed"),
+                                    report([], target_status="skipped")])
+def test_failed_negative_case_does_not_receive_perfect_quality_scores(actual):
+    scores = score_review(actual, {"expected_findings": []}, target_agent="security")
+    assert all(value == 0 for value in scores.values())
+
+
 def test_langsmith_evaluator_includes_completion_and_observed_latency():
     start = datetime(2026, 1, 1)
     run = SimpleNamespace(

@@ -20,6 +20,12 @@ def score_review(
 ) -> dict[str, float]:
     """Match findings by target agent and exact source anchor; score severity separately."""
     expected = reference.get("expected_findings", [])
+    status = next((item.get("status") for item in (report or {}).get("agent_statuses", [])
+                   if item.get("agent") == target_agent), None)
+    if status != "success":
+        # A failed negative case is unavailable, not a correct clean review.
+        return dict.fromkeys(("finding_precision", "finding_recall", "finding_f1",
+                              "exact_match", "severity_accuracy"), 0.0)
     predicted = _finding_rows(report or {}, target_agent)
     matched: set[int] = set()
     severity_matches = 0
