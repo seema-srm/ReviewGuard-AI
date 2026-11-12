@@ -1,7 +1,8 @@
 """Mock-only UI submissions and event-loop-safe workflow entry tests."""
 
 import asyncio
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
@@ -224,6 +225,7 @@ def test_service_passes_langfuse_callbacks_and_flushes_only_when_enabled(flush_f
     })
     langfuse_settings = Mock(public_key="public-placeholder")
     langfuse_client = Mock()
+    langfuse_client.start_as_current_observation.return_value = nullcontext()
     if flush_fails:
         langfuse_client.flush.side_effect = RuntimeError("telemetry unavailable")
     if workflow_fails:
@@ -264,3 +266,40 @@ def test_service_passes_langfuse_callbacks_and_flushes_only_when_enabled(flush_f
         "callbacks": [handler],
     }
     langfuse_client.flush.assert_called_once()
+
+
+def test_langfuse_root_context_reaches_all_three_real_graph_workers():
+    root = ContextVar("offline_root", default=None)
+    client = Mock()
+
+    @contextmanager
+    def observation(**kwargs):
+        token = root.set(kwargs["trace_context"]["trace_id"])
+        try:
+            yield
+        finally:
+            root.reset(token)
+
+    client.start_as_current_observation.side_effect = observation
+
+    def reviewer(agent):
+        def review(filename, source, **kwargs):
+            assert root.get() == "offline-root"
+            return AgentReviewResult(agent=agent, status="success", findings=[])
+        return review
+
+    graph = build_review_graph(
+        code_quality=reviewer(AgentType.code_quality),
+        security=reviewer(AgentType.security),
+        test_coverage=reviewer(AgentType.test_coverage),
+    )
+    with patch("reviewguard.ui.review_service.load_langfuse_settings", return_value=Mock()), patch(
+        "reviewguard.ui.review_service.create_langfuse_client", return_value=client
+    ), patch("reviewguard.ui.review_service.CallbackHandler", return_value=None), patch(
+        "reviewguard.ui.review_service.load_fireworks_settings"
+    ), patch("reviewguard.ui.review_service.build_review_graph", return_value=graph):
+        result = run_review(validate_python_file("example.py", b"pass\n"),
+                            langfuse_tracing_enabled=True, langfuse_trace_id="offline-root")
+    assert result.workflow_status == "completed"
+    assert root.get() is None
+    client.flush.assert_called_once()

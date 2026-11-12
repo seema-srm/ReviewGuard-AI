@@ -662,5 +662,29 @@ a flush failure does not discard a completed report or replace a workflow error.
 and findings.** Only enable this for code approved for external processing.
 LangSmith tracing is separately opt-in; enabling both sends trace data to both
 services. Pytest uses mocks and does not contact Langfuse, LangSmith, or Fireworks.
-Live Langfuse trace delivery and dashboard browser behavior still require manual
-verification. No paid requests are needed for the offline tests.
+Each traced review owns a root span whose context is copied into all three agent
+workers, keeping their generations in the same trace. Dashboard browser behavior
+still requires manual verification. No paid requests are needed for offline tests.
+
+### Explicit live tracing diagnostic
+
+From `reviewguard-ai`, run:
+
+```powershell
+..\.venv\Scripts\python.exe scripts\test_langfuse_connection.py --confirm-paid-run
+```
+
+Without the confirmation flag this command sends no requests. With the flag it
+checks Langfuse authentication before running a tiny synthetic Python review.
+It explicitly enables Langfuse and disables LangSmith for this diagnostic, makes
+at most three paid Fireworks requests with no inference retries, and polls for
+up to 45 seconds for three persisted generations with input, output, and usage.
+It prints statuses and the diagnostic trace ID without printing credentials,
+prompts, findings, or raw remote errors. A failed diagnostic is not automatically
+retried. A polling timeout means delivery was not verified within that window.
+
+Live verification on November 11, 2026 completed successfully after fixing worker
+trace context propagation: all three agents succeeded and all three generations
+were retrieved from trace `5492ac6a46a7096d4974e2036511cb29` with input, output,
+and usage. This confirms delivery for the synthetic sample; it does not measure
+review accuracy or replace a baseline evaluation.

@@ -28,6 +28,7 @@ def run_review(
     measured_coverage: dict[str, object] | None = None,
     tracing_enabled: bool | None = None,
     langfuse_tracing_enabled: bool | None = None,
+    langfuse_trace_id: str | None = None,
     trace_metadata: dict[str, Any] | None = None,
 ) -> ReviewReport:
     """One workflow, no retries. Caller must require explicit submission.
@@ -78,17 +79,28 @@ def run_review(
             )
             try:
                 with client_context:
-                    output = asyncio.run(
-                        graph.ainvoke(
-                            create_initial_state(
-                                upload.filename,
-                                upload.source,
-                                existing_tests=existing_tests,
-                                measured_coverage=measured_coverage,
-                            ),
-                            config=config or None,
+                    # The root context is copied by asyncio.to_thread into every
+                    # agent worker. Callback contexts alone do not cross that boundary.
+                    root_context = (
+                        langfuse_client.start_as_current_observation(
+                            name="ReviewGuard review",
+                            trace_context={"trace_id": langfuse_trace_id}
+                            if langfuse_trace_id is not None else None,
                         )
+                        if langfuse_client is not None else nullcontext()
                     )
+                    with root_context:
+                        output = asyncio.run(
+                            graph.ainvoke(
+                                create_initial_state(
+                                    upload.filename,
+                                    upload.source,
+                                    existing_tests=existing_tests,
+                                    measured_coverage=measured_coverage,
+                                ),
+                                config=config or None,
+                            )
+                        )
             finally:
                 if langfuse_client is not None:
                     try:
