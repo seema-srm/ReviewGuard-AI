@@ -35,9 +35,17 @@ Do not alter those recorded hashes to imply a new experiment was performed.
 - [x] Sanitize current reviewer labels and private document links.
 - [x] Regenerate and inspect document artifacts.
 - [x] Run offline regression tests: 534 passed, one dependency warning.
-- [ ] Apply and verify sanitized history for every GitHub branch and tag.
-- [ ] Recheck public-facing branch heads and author/committer identities.
-- [ ] Change repository visibility only after history cleanup is verified.
+- [x] Apply and verify sanitized history for all three GitHub branches; no tags exist.
+- [x] Recheck public-facing branch heads and anonymous author/committer identities.
+- [ ] Request GitHub removal of retained objects and cached views of old commits.
+
+The repository was already public during this review. Its current files and
+active branch histories passed the publication checks after the approved
+history rewrite. A direct-URL check confirmed that GitHub still retained an old
+commit with former personal attribution. Those retained objects are outside
+the rewritten branch histories and remain a separate cleanup requirement.
+Do not interpret the clean active histories as proof that GitHub has purged
+all old objects. See [GitHub's sensitive-data removal process](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository).
 
 Push explicitly selected branches. Do not use a mirror push from the development
 workspace: local tooling refs and checkpoints are not release artifacts.
