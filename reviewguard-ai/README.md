@@ -728,7 +728,7 @@ Ordinary UI reviews remain untraced by default. Setting
 `REVIEWGUARD_LANGSMITH_TRACING=true` explicitly enables traces for UI reviews.
 The Python test suite uses mocked evaluator runs and does not contact LangSmith
 or Fireworks. `evals/reviewed_golden_v1.jsonl` contains 30 cases marked reviewed
-with reviewer-01's annotation metadata and passes the dataset validation gate. The
+with pseudonymized human-review annotation metadata and passes the dataset validation gate. The
 original `evals/candidate_dataset.jsonl` retains the pending candidate annotations.
 No live LangSmith baseline/post-change experiment results are included. A local
 30-case baseline is saved in `evals/results/baseline-2026-11-11.md` with raw

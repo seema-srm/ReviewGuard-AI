@@ -1,0 +1,16 @@
+# Local environments, audit workspaces, and credentials are never publication assets.
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+.aws/
+.ssh/
+credentials.json
+service-account*.json
+*.pem
+*.key
+*.p12
+*.pfx

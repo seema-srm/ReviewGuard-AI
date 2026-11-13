@@ -15,8 +15,7 @@ and offline-validated behavior from the remaining live and acceptance checks.
 - `diagrams/data-model.mmd`: findings, agent results, aggregation, and report relationships.
 - Matching `.svg` and `.png` files: rendered versions for presentations or other documents.
 
-Editable online copy:
-[ReviewGuard AI Project Submission](../evals/results/validation-2026-11-13.md).
+Editable report source: [PROJECT_SUBMISSION.md](PROJECT_SUBMISSION.md).
 
 ## Regeneration
 
@@ -36,5 +35,3 @@ tooling, not application runtime dependencies.
 
 Edit the Mermaid blocks in `PROJECT_SUBMISSION.md` and keep the matching `.mmd`
 files synchronized. Regeneration reads the report's embedded Mermaid blocks.
-The online Page is an independent editable copy and must be updated separately
-if submission content changes.
