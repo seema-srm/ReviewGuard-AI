@@ -225,6 +225,9 @@ def main() -> None:
             st.session_state.review_error = "Review could not be completed. Sensitive provider details are hidden. No automatic retry was attempted."
         finally:
             st.session_state.review_running = False
+        # Refresh widgets rendered while the queued review was still running.
+        # The pending flag is already cleared, so this cannot resubmit a review.
+        st.rerun()
     if st.session_state.review_error:
         st.error(st.session_state.review_error)
     if st.session_state.review_attempted and not st.session_state.review_running:

@@ -1,0 +1,357 @@
+{
+  "workflow_status": "completed",
+  "findings": [
+    {
+      "representative": {
+        "finding_id": "CQ-001",
+        "agent": "code_quality",
+        "title": "is_even returns True for odd numbers",
+        "category": "logic_bug",
+        "severity": "HIGH",
+        "filename": "demo_review.py",
+        "line_number": 6,
+        "end_line": null,
+        "description": "The predicate checks whether number modulo 2 equals 1, which is true for odd integers and false for even integers. This inverts the documented behavior of is_even for every input.",
+        "evidence": "    return number % 2 == 1",
+        "recommendation": "Change the comparison to check for a remainder of zero, e.g. `return number % 2 == 0`, so the function returns True only for even numbers.",
+        "confidence": 0.99,
+        "suggested_tests": [
+          "is_even(2) returns True",
+          "is_even(3) returns False",
+          "is_even(0) returns True",
+          "is_even(-2) returns True"
+        ]
+      },
+      "provenance": [
+        {
+          "agent": "code_quality",
+          "finding_id": "CQ-001"
+        }
+      ],
+      "original_findings": [
+        {
+          "finding_id": "CQ-001",
+          "agent": "code_quality",
+          "title": "is_even returns True for odd numbers",
+          "category": "logic_bug",
+          "severity": "HIGH",
+          "filename": "demo_review.py",
+          "line_number": 6,
+          "end_line": null,
+          "description": "The predicate checks whether number modulo 2 equals 1, which is true for odd integers and false for even integers. This inverts the documented behavior of is_even for every input.",
+          "evidence": "    return number % 2 == 1",
+          "recommendation": "Change the comparison to check for a remainder of zero, e.g. `return number % 2 == 0`, so the function returns True only for even numbers.",
+          "confidence": 0.99,
+          "suggested_tests": [
+            "is_even(2) returns True",
+            "is_even(3) returns False",
+            "is_even(0) returns True",
+            "is_even(-2) returns True"
+          ]
+        }
+      ]
+    },
+    {
+      "representative": {
+        "finding_id": "TC-1",
+        "agent": "test_coverage",
+        "title": "Recommend an even-number test for is_even",
+        "category": "recommended_test",
+        "severity": "HIGH",
+        "filename": "demo_review.py",
+        "line_number": 6,
+        "end_line": 6,
+        "description": "The documented behavior says even inputs return True, but the expression compares the remainder to 1. A test should pin the documented contract for a simple even input.",
+        "evidence": "    return number % 2 == 1",
+        "recommendation": "Add a behavior test using an even integer and expect True per the docstring.",
+        "confidence": 0.98,
+        "suggested_tests": [
+          "test_is_even_even_number: inputs=2; expected=True"
+        ]
+      },
+      "provenance": [
+        {
+          "agent": "test_coverage",
+          "finding_id": "TC-1"
+        }
+      ],
+      "original_findings": [
+        {
+          "finding_id": "TC-1",
+          "agent": "test_coverage",
+          "title": "Recommend an even-number test for is_even",
+          "category": "recommended_test",
+          "severity": "HIGH",
+          "filename": "demo_review.py",
+          "line_number": 6,
+          "end_line": 6,
+          "description": "The documented behavior says even inputs return True, but the expression compares the remainder to 1. A test should pin the documented contract for a simple even input.",
+          "evidence": "    return number % 2 == 1",
+          "recommendation": "Add a behavior test using an even integer and expect True per the docstring.",
+          "confidence": 0.98,
+          "suggested_tests": [
+            "test_is_even_even_number: inputs=2; expected=True"
+          ]
+        }
+      ]
+    },
+    {
+      "representative": {
+        "finding_id": "TC-3",
+        "agent": "test_coverage",
+        "title": "Recommend a SQL-injection test for find_user",
+        "category": "recommended_test",
+        "severity": "HIGH",
+        "filename": "demo_review.py",
+        "line_number": 11,
+        "end_line": 11,
+        "description": "The username is interpolated directly into SQL text. A test should verify a malicious username cannot alter the query and that the username is supplied safely.",
+        "evidence": "    query = f\"SELECT id, username FROM users WHERE username = '{username}'\"",
+        "recommendation": "Test with a quote-and-predicate payload and assert the injected predicate does not change results, ideally by checking parameterized execution.",
+        "confidence": 0.97,
+        "suggested_tests": [
+          "test_find_user_sql_injection_payload: inputs=username \"' OR '1'='1\"; expected=no injected predicate applied and username parameterized safely"
+        ]
+      },
+      "provenance": [
+        {
+          "agent": "test_coverage",
+          "finding_id": "TC-3"
+        }
+      ],
+      "original_findings": [
+        {
+          "finding_id": "TC-3",
+          "agent": "test_coverage",
+          "title": "Recommend a SQL-injection test for find_user",
+          "category": "recommended_test",
+          "severity": "HIGH",
+          "filename": "demo_review.py",
+          "line_number": 11,
+          "end_line": 11,
+          "description": "The username is interpolated directly into SQL text. A test should verify a malicious username cannot alter the query and that the username is supplied safely.",
+          "evidence": "    query = f\"SELECT id, username FROM users WHERE username = '{username}'\"",
+          "recommendation": "Test with a quote-and-predicate payload and assert the injected predicate does not change results, ideally by checking parameterized execution.",
+          "confidence": 0.97,
+          "suggested_tests": [
+            "test_find_user_sql_injection_payload: inputs=username \"' OR '1'='1\"; expected=no injected predicate applied and username parameterized safely"
+          ]
+        }
+      ]
+    },
+    {
+      "representative": {
+        "finding_id": "SEC-001",
+        "agent": "security",
+        "title": "SQL injection via f-string interpolation of username into query",
+        "category": "SQL Injection",
+        "severity": "HIGH",
+        "filename": "demo_review.py",
+        "line_number": 11,
+        "end_line": null,
+        "description": "Supported vulnerability: the `username` parameter is interpolated directly into the SQL text using an f-string and then passed to `connection.execute(query)`. The visible input-to-sink path is the `username` argument -> `query` f-string -> `connection.execute(...)`. No parameter binding, escaping, validation, or allowlist is applied. A value such as `' OR '1'='1` (or a UNION/stacked payload) would alter the query structure, potentially bypassing authentication, exfiltrating rows, or modifying data depending on the database driver and privileges. Impact depends on the driver's multi-statement support and the connection's privileges, which are not visible here, so exploitability is inferred from the direct concatenation rather than demonstrated against a live database. The function is a synthetic exercise and the driver/connection type is not shown, but the pattern is a real injection regardless of stub status.",
+        "evidence": "    query = f\"SELECT id, username FROM users WHERE username = '{username}'\"",
+        "recommendation": "Use a parameterized query with bound placeholders instead of string interpolation, e.g. `connection.execute(\"SELECT id, username FROM users WHERE username = ?\", (username,))` (or the driver's named-placeholder form such as `:username` / `%s`). Never build SQL from f-strings, concatenation, or `%`/`format` with untrusted values. Optionally validate `username` format, but parameter binding is the primary fix. Ensure the database account used here has least privilege.",
+        "confidence": 0.9,
+        "suggested_tests": [
+          "Call find_user with username \"' OR '1'='1\" and assert it does not return all rows.",
+          "Call find_user with username \"'; DROP TABLE users; --\" against a test database and assert the table still exists.",
+          "Verify the executed statement string is constant and the username is passed as a separate bound parameter (assert on a mock connection's call args)."
+        ]
+      },
+      "provenance": [
+        {
+          "agent": "security",
+          "finding_id": "SEC-001"
+        }
+      ],
+      "original_findings": [
+        {
+          "finding_id": "SEC-001",
+          "agent": "security",
+          "title": "SQL injection via f-string interpolation of username into query",
+          "category": "SQL Injection",
+          "severity": "HIGH",
+          "filename": "demo_review.py",
+          "line_number": 11,
+          "end_line": null,
+          "description": "Supported vulnerability: the `username` parameter is interpolated directly into the SQL text using an f-string and then passed to `connection.execute(query)`. The visible input-to-sink path is the `username` argument -> `query` f-string -> `connection.execute(...)`. No parameter binding, escaping, validation, or allowlist is applied. A value such as `' OR '1'='1` (or a UNION/stacked payload) would alter the query structure, potentially bypassing authentication, exfiltrating rows, or modifying data depending on the database driver and privileges. Impact depends on the driver's multi-statement support and the connection's privileges, which are not visible here, so exploitability is inferred from the direct concatenation rather than demonstrated against a live database. The function is a synthetic exercise and the driver/connection type is not shown, but the pattern is a real injection regardless of stub status.",
+          "evidence": "    query = f\"SELECT id, username FROM users WHERE username = '{username}'\"",
+          "recommendation": "Use a parameterized query with bound placeholders instead of string interpolation, e.g. `connection.execute(\"SELECT id, username FROM users WHERE username = ?\", (username,))` (or the driver's named-placeholder form such as `:username` / `%s`). Never build SQL from f-strings, concatenation, or `%`/`format` with untrusted values. Optionally validate `username` format, but parameter binding is the primary fix. Ensure the database account used here has least privilege.",
+          "confidence": 0.9,
+          "suggested_tests": [
+            "Call find_user with username \"' OR '1'='1\" and assert it does not return all rows.",
+            "Call find_user with username \"'; DROP TABLE users; --\" against a test database and assert the table still exists.",
+            "Verify the executed statement string is constant and the username is passed as a separate bound parameter (assert on a mock connection's call args)."
+          ]
+        }
+      ]
+    },
+    {
+      "representative": {
+        "finding_id": "TC-2",
+        "agent": "test_coverage",
+        "title": "Recommend zero and negative-even boundary tests for is_even",
+        "category": "recommended_test",
+        "severity": "MEDIUM",
+        "filename": "demo_review.py",
+        "line_number": 6,
+        "end_line": 6,
+        "description": "Boundary values for parity include zero and negative even integers. These exercise modulo behavior outside the positive-number path.",
+        "evidence": "    return number % 2 == 1",
+        "recommendation": "Parameterize zero and a negative even integer and expect True for each.",
+        "confidence": 0.9,
+        "suggested_tests": [
+          "test_is_even_zero_and_negative_even: inputs=0, -2; expected=True for each"
+        ]
+      },
+      "provenance": [
+        {
+          "agent": "test_coverage",
+          "finding_id": "TC-2"
+        }
+      ],
+      "original_findings": [
+        {
+          "finding_id": "TC-2",
+          "agent": "test_coverage",
+          "title": "Recommend zero and negative-even boundary tests for is_even",
+          "category": "recommended_test",
+          "severity": "MEDIUM",
+          "filename": "demo_review.py",
+          "line_number": 6,
+          "end_line": 6,
+          "description": "Boundary values for parity include zero and negative even integers. These exercise modulo behavior outside the positive-number path.",
+          "evidence": "    return number % 2 == 1",
+          "recommendation": "Parameterize zero and a negative even integer and expect True for each.",
+          "confidence": 0.9,
+          "suggested_tests": [
+            "test_is_even_zero_and_negative_even: inputs=0, -2; expected=True for each"
+          ]
+        }
+      ]
+    },
+    {
+      "representative": {
+        "finding_id": "TC-5",
+        "agent": "test_coverage",
+        "title": "Recommend an exception-propagation test for find_user",
+        "category": "recommended_test",
+        "severity": "MEDIUM",
+        "filename": "demo_review.py",
+        "line_number": 12,
+        "end_line": 12,
+        "description": "If the database execution fails, the function has no handling. A test should confirm whether the database exception propagates to the caller.",
+        "evidence": "    return connection.execute(query).fetchall()",
+        "recommendation": "Use a fake connection whose execute raises RuntimeError and assert the exception propagates.",
+        "confidence": 0.88,
+        "suggested_tests": [
+          "test_find_user_db_exception_propagates: inputs=connection.execute raises RuntimeError('db down'); expected=RuntimeError propagates"
+        ]
+      },
+      "provenance": [
+        {
+          "agent": "test_coverage",
+          "finding_id": "TC-5"
+        }
+      ],
+      "original_findings": [
+        {
+          "finding_id": "TC-5",
+          "agent": "test_coverage",
+          "title": "Recommend an exception-propagation test for find_user",
+          "category": "recommended_test",
+          "severity": "MEDIUM",
+          "filename": "demo_review.py",
+          "line_number": 12,
+          "end_line": 12,
+          "description": "If the database execution fails, the function has no handling. A test should confirm whether the database exception propagates to the caller.",
+          "evidence": "    return connection.execute(query).fetchall()",
+          "recommendation": "Use a fake connection whose execute raises RuntimeError and assert the exception propagates.",
+          "confidence": 0.88,
+          "suggested_tests": [
+            "test_find_user_db_exception_propagates: inputs=connection.execute raises RuntimeError('db down'); expected=RuntimeError propagates"
+          ]
+        }
+      ]
+    },
+    {
+      "representative": {
+        "finding_id": "TC-4",
+        "agent": "test_coverage",
+        "title": "Recommend an empty-result test for find_user",
+        "category": "recommended_test",
+        "severity": "LOW",
+        "filename": "demo_review.py",
+        "line_number": 12,
+        "end_line": 12,
+        "description": "The lookup returns fetchall() directly. An empty fetchall result should be returned unchanged rather than transformed or raising.",
+        "evidence": "    return connection.execute(query).fetchall()",
+        "recommendation": "Use a fake connection whose fetchall returns an empty list and assert the same empty list is returned.",
+        "confidence": 0.85,
+        "suggested_tests": [
+          "test_find_user_empty_result: inputs=connection.fetchall() returns []; expected=[] returned"
+        ]
+      },
+      "provenance": [
+        {
+          "agent": "test_coverage",
+          "finding_id": "TC-4"
+        }
+      ],
+      "original_findings": [
+        {
+          "finding_id": "TC-4",
+          "agent": "test_coverage",
+          "title": "Recommend an empty-result test for find_user",
+          "category": "recommended_test",
+          "severity": "LOW",
+          "filename": "demo_review.py",
+          "line_number": 12,
+          "end_line": 12,
+          "description": "The lookup returns fetchall() directly. An empty fetchall result should be returned unchanged rather than transformed or raising.",
+          "evidence": "    return connection.execute(query).fetchall()",
+          "recommendation": "Use a fake connection whose fetchall returns an empty list and assert the same empty list is returned.",
+          "confidence": 0.85,
+          "suggested_tests": [
+            "test_find_user_empty_result: inputs=connection.fetchall() returns []; expected=[] returned"
+          ]
+        }
+      ]
+    }
+  ],
+  "agent_statuses": [
+    {
+      "agent": "code_quality",
+      "status": "success",
+      "error_message": null,
+      "error_category": null
+    },
+    {
+      "agent": "security",
+      "status": "success",
+      "error_message": null,
+      "error_category": null
+    },
+    {
+      "agent": "test_coverage",
+      "status": "success",
+      "error_message": null,
+      "error_category": null
+    }
+  ],
+  "report_id": "501fc789-8082-4618-8caa-5a6fb7a2ba43",
+  "generated_at": "2026-11-13T22:17:35.025321Z",
+  "filename": "demo_review.py",
+  "total_unique_findings": 7,
+  "counts_by_severity": {
+    "CRITICAL": 0,
+    "HIGH": 4,
+    "MEDIUM": 2,
+    "LOW": 1
+  },
+  "warnings": [
+    "Model findings require engineering verification.",
+    "A successful review does not prove code is free of bugs or vulnerabilities."
+  ]
+}

@@ -1,0 +1,20 @@
+flowchart TD
+    Start([Validated review request]) --> Q["Code quality branch"]
+    Start --> S["Security branch"]
+    Start --> T["Test recommendation branch"]
+    Q --> QR["Validated result or sanitized failure"]
+    S --> SR["Validated result or sanitized failure"]
+    T --> TR["Validated result or sanitized failure"]
+    QR --> Barrier["Join after all three results"]
+    SR --> Barrier
+    TR --> Barrier
+    Barrier --> Dedup["Conservative identity deduplication"]
+    Dedup --> Sort["Sort by severity and confidence"]
+    Sort --> Status{"Successful agents"}
+    Status -->|All three| Completed["Completed"]
+    Status -->|One or two| Partial["Partial"]
+    Status -->|None| Failed["Failed"]
+    Completed --> Export["Build report and guard export"]
+    Partial --> Export
+    Failed --> Export
+    Export --> Finish([Return report or sanitized execution error])

@@ -1,0 +1,33 @@
+{
+  "demo_date": "2026-11-13",
+  "source": "samples/demo_review.py",
+  "kind": "live Fireworks review; no mocked reviewers",
+  "workflow_status": "completed",
+  "total_unique_findings": 7,
+  "counts_by_severity": {
+    "CRITICAL": 0,
+    "HIGH": 4,
+    "MEDIUM": 2,
+    "LOW": 1
+  },
+  "agent_statuses": [
+    {
+      "agent": "code_quality",
+      "status": "success",
+      "error_category": null
+    },
+    {
+      "agent": "security",
+      "status": "success",
+      "error_category": null
+    },
+    {
+      "agent": "test_coverage",
+      "status": "success",
+      "error_category": null
+    }
+  ],
+  "review_submissions": 1,
+  "maximum_model_requests": 3,
+  "automatic_retries": 0
+}

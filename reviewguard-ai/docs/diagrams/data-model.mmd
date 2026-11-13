@@ -1,0 +1,48 @@
+classDiagram
+    class ReviewFinding {
+        string finding_id
+        AgentType agent
+        string title
+        string category
+        Severity severity
+        string filename
+        optional_int line_number
+        optional_int end_line
+        string description
+        string evidence
+        string recommendation
+        float confidence
+        optional_list suggested_tests
+    }
+    class AgentReviewResult {
+        AgentType agent
+        string status
+        optional_string error_message
+        optional_ErrorCategory error_category
+    }
+    class AggregatedFinding {
+        ReviewFinding representative
+    }
+    class FindingProvenance {
+        AgentType agent
+        string finding_id
+    }
+    class AgentExecution {
+        AgentType agent
+        string status
+        optional_ErrorCategory error_category
+    }
+    class ReviewReport {
+        UUID report_id
+        datetime generated_at
+        string filename
+        string workflow_status
+        int total_unique_findings
+        dict counts_by_severity
+        tuple warnings
+    }
+    AgentReviewResult "1" *-- "0..*" ReviewFinding : findings
+    AggregatedFinding "1" *-- "1..*" ReviewFinding : originals
+    AggregatedFinding "1" *-- "1..*" FindingProvenance : provenance
+    ReviewReport "1" *-- "0..*" AggregatedFinding : findings
+    ReviewReport "1" *-- "3" AgentExecution : statuses

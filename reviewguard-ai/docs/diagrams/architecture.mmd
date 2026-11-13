@@ -1,0 +1,24 @@
+flowchart TB
+    User["Developer or reviewer"] --> Browser["Browser"]
+    Browser <--> UI
+    subgraph Local["ReviewGuard AI application"]
+        UI["Streamlit dashboard - app.py"]
+        UI --> Upload["In-memory upload validation and preview"]
+        UI --> Service["Explicit review service"]
+        Service --> Graph["LangGraph orchestration"]
+        Graph --> Quality["Code quality reviewer"]
+        Graph --> Security["Security reviewer"]
+        Graph --> Coverage["Test recommendation reviewer"]
+        Quality --> Validate["Pydantic and exact source validation"]
+        Security --> Validate
+        Coverage --> Validate
+        Validate --> Aggregate["Aggregation and prioritization"]
+        Aggregate --> Report["ReviewReport and guarded JSON export"]
+        Report --> UI
+        UI <--> Session["Session state - upload fingerprint and report"]
+    end
+    Quality <--> Fireworks["Fireworks inference API"]
+    Security <--> Fireworks
+    Coverage <--> Fireworks
+    Service -. "Opt-in tracing" .-> Tracing["LangSmith or Langfuse"]
+    UI --> Download["Full JSON report download"]

@@ -1,6 +1,29 @@
 # ReviewGuard AI
 
-Multi-Agent Code Review Platform — Phase 1 starter.
+Multi-Agent Code Review Platform with a Streamlit dashboard and three concurrent
+AI reviewers: code quality, security, and test recommendations.
+
+## Current status
+
+Submission documentation is available in [docs](docs/README.md), including a
+[PDF report](docs/ReviewGuardAI-PROJECT_SUBMISSION.pdf), an editable report, and four Mermaid
+architecture, workflow, sequence, and data-model diagrams.
+
+The application supports one Python upload, explicit Fireworks review execution,
+prioritized findings, per-agent statuses, severity filters, and full JSON report
+downloads. Uploads are validated in memory and never executed. Results persist
+within the current browser session. LangSmith and Langfuse tracing are opt-in.
+GitHub/pull-request integration is deferred.
+
+Offline verification on November 13, 2026 passed all 534 tests. The latest saved
+coverage-only verification accepted 30/30 responses; a new full three-agent
+post-fix quality benchmark is still pending. The earlier baseline's quality
+scores remain the only full-workflow measurements. See
+[validation status](evals/results/validation-2026-11-13.md) for checks and limits.
+
+The phase sections below preserve implementation history. Statements about
+placeholders, disconnected reviewers, or deferred filters/downloads describe
+those earlier checkpoints, not the current application.
 
 ## Setup (Windows PowerShell)
 
@@ -16,7 +39,11 @@ py -3.12 -m venv .venv
 For Python 3.11, replace `-3.12` with `-3.11`. Calling the virtual environment's
 interpreter directly avoids PowerShell activation policy changes.
 Open the local URL printed by Streamlit (normally http://localhost:8501).
-No API keys, `.env` file, or external service accounts are required.
+No credentials are required for uploads, previews, or offline tests. Actual
+reviews require `FIREWORKS_API_KEY`, `FIREWORKS_MODEL`, and `FIREWORKS_BASE_URL`
+in `reviewguard-ai/.env` or the process environment. Copy `.env.example` and
+fill in your own values; never commit credentials. Clicking Review Code sends
+source to Fireworks and may incur charges. Uploading alone sends no request.
 
 ## Tests and compilation
 
@@ -29,9 +56,27 @@ From `reviewguard-ai`, using the same environment:
 
 Tests use in-memory uploads and Streamlit AppTest without a browser, network
 access, or API keys. UI tests substitute an in-memory uploader result so they
-can exercise previews, validation errors, and the placeholder review button.
+can exercise previews, validation errors, review execution, reports, and downloads.
 
-## Project structure
+Optional real-browser verification uses installed Google Chrome and Playwright:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install playwright
+.\.venv\Scripts\python.exe scripts\verify_browser.py
+.\.venv\Scripts\python.exe scripts\verify_browser.py --artifacts .pytest_cache/visual-validation
+```
+
+Use `..\.venv\Scripts\python.exe` instead if using the existing workspace-level
+environment. The browser harness launches an isolated localhost server, replaces
+the review service with synthetic reports, and blocks HTTPX requests. It makes
+no model calls and does not load the application's credentials. Playwright is
+optional validation tooling and is not required to run the application.
+The artifact option saves synthetic desktop/phone screenshots and a Chrome
+accessibility snapshot. The harness also checks keyboard activation for review,
+finding expansion, severity selection, and download. Actual screen-reader and
+human acceptance testing remain separate checks.
+
+## Original Phase 1 project structure (historical)
 
 ```text
 reviewguard-ai/
@@ -52,7 +97,7 @@ reviewguard-ai/
 └── README.md
 ```
 
-## Phase 1 scope
+## Phase 1 scope (historical)
 
 Upload one `.py` file, validate its extension (case-insensitive), size, and UTF-8
 encoding, and display its filename, byte size, line count, and highlighted source.

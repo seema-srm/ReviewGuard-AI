@@ -1,0 +1,31 @@
+sequenceDiagram
+    actor User
+    participant UI as Streamlit dashboard
+    participant V as Upload validator
+    participant S as Review service
+    participant G as LangGraph
+    participant A as Three reviewers
+    participant F as Fireworks API
+    participant R as Aggregation and report
+    User->>UI: Upload Python file
+    UI->>V: Validate bytes and metadata
+    V-->>UI: Validated source or upload error
+    UI-->>User: Source preview without inference
+    User->>UI: Select Review Code
+    UI->>UI: Set pending, running and attempted guards
+    UI->>S: run_review(validated upload)
+    S->>G: Invoke graph in dedicated worker event loop
+    G->>A: Dispatch three concurrent branches
+    A->>F: Up to one request per nonempty branch
+    F-->>A: JSON response or provider error
+    A->>A: Validate schema, category and exact evidence
+    A-->>G: Explicit status for each reviewer
+    G->>R: Join, deduplicate, prioritize and build report
+    R-->>S: Guarded consolidated report
+    S-->>UI: ReviewReport
+    UI->>UI: Store result, clear running state and rerun
+    UI-->>User: Findings, counts and agent statuses
+    User->>UI: Filter severity
+    UI-->>User: Filter saved findings without inference
+    User->>UI: Download JSON
+    UI-->>User: Full validated report regardless of filter
